@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
+from scholarly_access_agent.core.urls import looks_like_pdf_url
 from scholarly_access_agent.providers.snu.login import (
     PageSnapshot,
     detect_login_required,
@@ -149,7 +150,24 @@ def capture_page_snapshot(page: Any) -> PageSnapshot:
         title=_safe_page_title(page),
         body_text=_safe_body_text(page),
         has_password_field=_has_password_field(page),
+        has_content_access=_has_content_access(page),
     )
+
+
+def _has_content_access(page: Any) -> bool:
+    """Whether the page offers the full text -- i.e. we are through the paywall.
+
+    A proxied publisher page always mentions the institution and usually carries
+    "Login"/"Password" chrome, so the login heuristics need this positive signal
+    to avoid classifying a perfectly readable article as a login wall.
+    """
+    try:
+        hrefs = page.eval_on_selector_all(
+            "a[href]", "els => els.map(e => e.href || '')"
+        )
+    except Exception:
+        return False
+    return any(looks_like_pdf_url(str(href)) for href in hrefs)
 
 
 def _load_sync_playwright() -> Callable[[], Any]:

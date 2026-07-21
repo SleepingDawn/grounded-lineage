@@ -12,6 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
+from scholarly_access_agent.core.urls import looks_like_pdf_url, pdf_url_rank
 from scholarly_access_agent.providers.snu.login import (
     PageSnapshot,
     detect_login_required,
@@ -29,6 +30,8 @@ DEFAULT_DOWNLOAD_DIR = Path("downloads")
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 USER_AGENT = "scholarly-access-agent/0.1"
+# How many ranked PDF candidates to attempt before giving up on a page.
+MAX_PDF_CANDIDATE_ATTEMPTS = 4
 
 
 @dataclass(frozen=True)
@@ -132,6 +135,7 @@ def download_pdf(
     if pdf_url:
         return _download_pdf_direct(
             source_url, pdf_url, provider, resolved_download_dir, timeout_seconds,
+            resolved_profile_dir,
         )
 
     proxy_url = provider.proxied_url(source_url)
@@ -195,6 +199,7 @@ def _download_pdf_direct(
     provider: SnuProxyProvider,
     download_dir: Path,
     timeout_seconds: int,
+    profile_dir: Path = DEFAULT_PROFILE_DIR,
 ) -> PdfDownloadResult:
     """Download a specific PDF URL without page discovery."""
     playwright_factory = _try_load_playwright()
@@ -202,7 +207,7 @@ def _download_pdf_direct(
         try:
             return _download_pdf_direct_playwright(
                 source_url, pdf_url, provider, download_dir,
-                timeout_seconds, playwright_factory,
+                timeout_seconds, playwright_factory, profile_dir,
             )
         except Exception:
             pass
@@ -243,10 +248,18 @@ def _download_pdf_direct_playwright(
     download_dir: Path,
     timeout_seconds: int,
     playwright_factory,
+    profile_dir: Path = DEFAULT_PROFILE_DIR,
 ) -> PdfDownloadResult:
     timeout_ms = timeout_seconds * 1000
+    # Must reuse the persistent profile: the proxy session lives in its cookies.
+    # Launching a throwaway context here meant --pdf-url always fetched as an
+    # anonymous visitor and got an HTML paywall page back instead of the PDF.
+    resolved_profile_dir = (profile_dir or DEFAULT_PROFILE_DIR).resolve()
+    resolved_profile_dir.mkdir(parents=True, exist_ok=True)
     with playwright_factory() as p:
-        context = p.chromium.launch_persistent_context(headless=True)
+        context = p.chromium.launch_persistent_context(
+            user_data_dir=str(resolved_profile_dir), headless=True,
+        )
         try:
             api = context.request
             pdf_resp = api.get(pdf_url, timeout=timeout_ms)
@@ -311,6 +324,7 @@ def _download_via_urllib(
             title=page.title,
             body_text=page.text,
             has_password_field=page.has_password_field,
+            has_content_access=bool(page.all_pdf_candidates(first.url)),
         )
     )
     if login.required:
@@ -421,24 +435,25 @@ def _download_via_playwright(
                         pass
                     snapshot = capture_page_snapshot(page)
                     login = detect_login_required(snapshot)
-                    if login.required:
-                        return _failure(
-                            provider=provider,
-                            source_url=source_url,
-                            download_dir=download_dir,
-                            status="login_required",
-                            reason="auto_login_incomplete",
-                            message="Auto-login was attempted but the page still requires login.",
-                        )
-                else:
+
+                # Open-access publishers (PLOS, Frontiers, MDPI, PeerJ ...) are not
+                # served by the library proxy at all -- proxying them just bounces to
+                # the SNU login page -- yet the article is freely readable. So when
+                # the proxy route dead-ends, retry the original URL without the proxy.
+                if login.required and _try_direct_access(page, source_url, timeout_ms):
+                    snapshot = capture_page_snapshot(page)
+                    login = detect_login_required(snapshot)
+
+                if login.required:
                     return _failure(
                         provider=provider,
                         source_url=source_url,
                         download_dir=download_dir,
                         status="login_required",
-                        reason=login.reason or "login_required",
-                        message=login.message or "Login is required before PDF download.",
+                        reason="auto_login_incomplete",
+                        message="Auto-login was attempted but the page still requires login.",
                     )
+
 
             content_type = (
                 response.headers.get("content-type", "") if response else ""
@@ -466,6 +481,12 @@ def _download_via_playwright(
             if pw_candidates:
                 candidates = pw_candidates
 
+            # Platforms that build the PDF link in JS expose nothing to scrape;
+            # derive their endpoints from the article URL instead.
+            if not candidates:
+                candidates = derive_candidates_from_source(source_url, page.url)
+                _trace(f"[download] derived {len(candidates)} candidates from source URL")
+
             if not candidates:
                 return _failure(
                     provider=provider,
@@ -476,49 +497,51 @@ def _download_via_playwright(
                     message="No downloadable PDF link was found on the page.",
                 )
 
-            candidate_url = candidates[0].href
+            # Try candidates in rank order. The first link on the page is often a
+            # viewer wrapper that returns HTML (Wiley's /doi/pdf/ is the classic
+            # case), so stopping at the first one loses articles that are in fact
+            # fully available.
             api = context.request
-            pdf_resp = api.get(candidate_url, timeout=timeout_ms)
-            pdf_headers = dict(pdf_resp.headers)
-            pdf_body = pdf_resp.body()
+            last_status: int | None = None
+            last_url: str | None = None
+            for candidate in candidates[:MAX_PDF_CANDIDATE_ATTEMPTS]:
+                try:
+                    pdf_resp = api.get(candidate.href, timeout=timeout_ms)
+                except Exception as exc:
+                    _trace(f"[download] candidate failed: {exc}")
+                    continue
+                last_status, last_url = pdf_resp.status, pdf_resp.url
+                if not pdf_resp.ok:
+                    continue
+                pdf_body = pdf_resp.body()
+                if _is_pdf_response(pdf_resp.url, dict(pdf_resp.headers), pdf_body):
+                    return _save_pdf(
+                        provider, source_url, pdf_resp.url, pdf_body, download_dir,
+                    )
 
-            if pdf_resp.status in {401, 403}:
+            if last_status in {401, 403}:
                 return _failure(
                     provider=provider,
                     source_url=source_url,
                     download_dir=download_dir,
                     status="login_required",
                     reason="login_required",
-                    message=f"HTTP {pdf_resp.status} suggests login or access approval is required.",
+                    message=f"HTTP {last_status} suggests login or access approval is required.",
                     candidates=_candidates_to_dicts(candidates),
                 )
 
-            if not pdf_resp.ok:
-                return _failure(
-                    provider=provider,
-                    source_url=source_url,
-                    download_dir=download_dir,
-                    status="download_failed",
-                    pdf_url=pdf_resp.url,
-                    reason="download_failed",
-                    message=f"HTTP {pdf_resp.status}: {pdf_resp.status_text}",
-                    candidates=_candidates_to_dicts(candidates),
-                )
-
-            if not _is_pdf_response(pdf_resp.url, pdf_headers, pdf_body):
-                return _failure(
-                    provider=provider,
-                    source_url=source_url,
-                    download_dir=download_dir,
-                    status="download_failed",
-                    pdf_url=pdf_resp.url,
-                    reason="download_failed",
-                    message="The discovered PDF link did not return PDF content.",
-                    candidates=_candidates_to_dicts(candidates),
-                )
-
-            return _save_pdf(
-                provider, source_url, pdf_resp.url, pdf_body, download_dir,
+            return _failure(
+                provider=provider,
+                source_url=source_url,
+                download_dir=download_dir,
+                status="download_failed",
+                pdf_url=last_url,
+                reason="download_failed",
+                message=(
+                    f"None of the {min(len(candidates), MAX_PDF_CANDIDATE_ATTEMPTS)} "
+                    "PDF candidates returned PDF content."
+                ),
+                candidates=_candidates_to_dicts(candidates),
             )
         finally:
             context.close()
@@ -573,6 +596,7 @@ def _discover_via_urllib(
             title=page.title,
             body_text=page.text,
             has_password_field=page.has_password_field,
+            has_content_access=bool(page.all_pdf_candidates(first.url)),
         )
     )
     if login.required:
@@ -726,6 +750,24 @@ def _discover_via_playwright(
             context.close()
 
 
+def _try_direct_access(page: Any, source_url: str, timeout_ms: int) -> bool:
+    """Navigate to the publisher URL without the proxy. True if a page loaded.
+
+    The library proxy only carries subscribed content; open-access publishers are
+    absent from it, so the proxy route redirects to the SNU login page even though
+    the article needs no authentication at all. Going direct is the correct route
+    for those. Access is still judged afterwards by the usual snapshot checks.
+    """
+    try:
+        _trace("[direct] proxy route dead-ended, retrying without proxy ...")
+        page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
+        _wait_for_page_ready(page, timeout_ms)
+        return True
+    except Exception as exc:
+        _trace(f"[direct] direct navigation failed: {exc}")
+        return False
+
+
 def _trace(msg: str) -> None:
     """Write a timestamped trace message to stderr (never stdout, to keep MCP clean)."""
     ts = time.monotonic()
@@ -765,8 +807,16 @@ def _discover_pdf_links_playwright(page: Any) -> list[PdfCandidate]:
                     if (!href || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('#'))
                         continue;
                     const text = (link.textContent || '').trim();
-                    const isPdf = href.endsWith('.pdf')
-                        || (text.toLowerCase().includes('pdf') && href.toLowerCase().includes('pdf'));
+                    // Publisher full-text endpoints rarely end in ".pdf"
+                    // (Wiley /doi/pdfdirect/, Elsevier /pdfft, Springer /content/pdf/,
+                    // IEEE /stamp/stamp.jsp ...), so match those shapes too.
+                    // Ranking/filtering happens in Python via pdf_url_rank.
+                    const h = href.toLowerCase();
+                    const isPdf = /\\.pdf($|\\?)/.test(h)
+                        || /\\/pdfdirect\\/|\\/pdfft|\\/content\\/pdf\\/|\\/articlepdf\\/|\\/stamp\\/stamp\\.jsp|type=printable|\\/article-pdf\\//.test(h)
+                        || /\\/doi\\/epdf\\/|\\/doi\\/reader\\/|\\/epdf/.test(h)
+                        || /\\/doi\\/pdf\\/|\\/pdf\\/|[?&]download=true/.test(h)
+                        || (text.toLowerCase().includes('pdf') && h.includes('pdf'));
                     if (!isPdf) continue;
                     const parent = link.closest('li, div, p, section, article');
                     const context = (parent?.textContent || text).trim().slice(0, 300);
@@ -789,7 +839,7 @@ def _discover_pdf_links_playwright(page: Any) -> list[PdfCandidate]:
             )
         )
     _trace(f"[js-discover] evaluate returned {len(candidates)} raw candidates")
-    return candidates
+    return rank_pdf_candidates(candidates)
 
 
 def _candidates_to_dicts(candidates: list[PdfCandidate]) -> list[dict[str, str]]:
@@ -846,7 +896,137 @@ class _HtmlPage:
                 results.append(PdfCandidate(href=absolute, text=link.text))
             elif "pdf" in link.text.lower() and "pdf" in urlparse(absolute).path.lower():
                 results.append(PdfCandidate(href=absolute, text=link.text))
-        return results
+        return rank_pdf_candidates(results)
+
+
+# (viewer -> direct) rewrites, applied to the page's own links.
+# Several platforms only ever link the in-browser viewer; the byte-serving
+# endpoint exists but is never present in the DOM, so it has to be derived.
+_DIRECT_VARIANT_REWRITES = (
+    ("/doi/epdf/", "/doi/pdfdirect/"),    # Wiley reader   -> bytes
+    ("/doi/pdf/", "/doi/pdfdirect/"),     # Wiley wrapper  -> bytes
+    ("/doi/reader/", "/doi/pdf/"),        # SAGE reader    -> bytes
+    ("/articles/abs/", "/articles/pdf/"),
+)
+
+
+def derive_candidates_from_source(source_url: str, page_url: str) -> list[PdfCandidate]:
+    """Synthesise PDF candidates from the article URL when the DOM exposes none.
+
+    Some platforms build the PDF link in JavaScript or hide it behind a viewer
+    component, so ``a[href]`` scraping finds nothing even though the article is
+    accessible. Their PDF endpoints are, however, derivable from the article URL.
+    Returned candidates are still verified by magic bytes before being saved.
+
+    Both URLs are used: the landing URL carries the proxied host (needed for
+    subscribed content), while the original URL still identifies the publisher when
+    the proxy redirected somewhere unrelated, such as its own login page.
+    """
+    out: list[PdfCandidate] = []
+    seen: set[str] = set()
+    for url in (page_url, source_url):
+        if not url:
+            continue
+        for candidate in _derive_for_url(url):
+            if candidate.href not in seen:
+                seen.add(candidate.href)
+                out.append(candidate)
+    return out
+
+
+def _derive_for_url(page_url: str) -> list[PdfCandidate]:
+    parsed = urlparse(page_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    path = parsed.path
+    host = parsed.netloc.lower()
+    out: list[str] = []
+
+    if "sciencedirect" in host or "elsevier" in host:
+        match = re.search(r"/pii/([A-Z0-9]+)", path, flags=re.IGNORECASE)
+        if match:
+            out.append(f"{origin}/science/article/pii/{match.group(1)}/pdfft?isDTMRedir=true")
+    elif "ieee" in host:
+        match = re.search(r"/document/(\d+)", path)
+        if match:
+            out.append(f"{origin}/stamp/stamp.jsp?arnumber={match.group(1)}")
+    elif "tandfonline" in host:
+        doi = re.search(r"/doi/(?:full|abs)/(.+)$", path)
+        if doi:
+            out.append(f"{origin}/doi/pdf/{doi.group(1)}?download=true")
+            out.append(f"{origin}/doi/epdf/{doi.group(1)}")
+    # Open-access platforms: the PDF is free but the link is rendered client-side.
+    elif "plos" in host:
+        doi = re.search(r"id=([^&]+)", parsed.query) or re.search(r"/article/(.+)$", path)
+        if doi:
+            journal = re.match(r"/([a-z]+)/", path)
+            section = journal.group(1) if journal else "plosone"
+            out.append(f"{origin}/{section}/article/file?id={doi.group(1)}&type=printable")
+    elif "frontiersin" in host:
+        doi = re.search(r"/articles/(10\.\d{4,}/[^/]+)", path)
+        if doi:
+            out.append(f"{origin}/articles/{doi.group(1)}/pdf")
+    elif "mdpi" in host:
+        out.append(f"{origin}{path.rstrip('/')}/pdf")
+    elif "peerj" in host:
+        out.append(f"{origin}{path.rstrip('/')}.pdf")
+
+    return [PdfCandidate(href=href, text="(derived)", context="") for href in out]
+
+
+def derive_direct_variants(candidates: list[PdfCandidate]) -> list[PdfCandidate]:
+    """Add byte-serving variants derived from viewer links.
+
+    Wiley is the motivating case: an article page links only /doi/pdf/ (an HTML
+    viewer wrapper) and /doi/epdf/, while the actual PDF lives at /doi/pdfdirect/.
+    Without this the download fails even though the article is fully accessible.
+    """
+    seen = {candidate.href for candidate in candidates}
+    derived: list[PdfCandidate] = []
+    for candidate in candidates:
+        for viewer, direct in _DIRECT_VARIANT_REWRITES:
+            if viewer in candidate.href:
+                variant = candidate.href.replace(viewer, direct)
+                if variant not in seen:
+                    seen.add(variant)
+                    derived.append(
+                        PdfCandidate(
+                            href=variant,
+                            text=candidate.text,
+                            context=candidate.context,
+                        )
+                    )
+    return candidates + derived
+
+
+def rank_pdf_candidates(candidates: list[PdfCandidate]) -> list[PdfCandidate]:
+    """Order candidates so byte-serving endpoints are tried before viewer wrappers.
+
+    Supplementary material is pushed to the very back: a "Supporting Information"
+    PDF is a real PDF, so it survives the URL filter and would otherwise be picked
+    ahead of the article itself when it appears earlier in the DOM.
+    """
+    def sort_key(index_and_candidate: tuple[int, PdfCandidate]) -> tuple[int, int, int]:
+        index, candidate = index_and_candidate
+        rank = pdf_url_rank(candidate.href)
+        rank = 1 if rank is None else rank
+        return (1 if _is_supplementary(candidate) else 0, rank, index)
+
+    candidates = derive_direct_variants(candidates)
+    ordered = sorted(enumerate(candidates), key=sort_key)
+    return [candidate for _, candidate in ordered]
+
+
+_SUPPLEMENTARY_MARKERS = (
+    "supplementary", "supporting information", "supplemental",
+    "appendix", " esi", "(esi", "data s", "table s", "figure s",
+)
+
+
+def _is_supplementary(candidate: PdfCandidate) -> bool:
+    haystack = f"{candidate.text} {candidate.context}".lower()
+    if any(marker in haystack for marker in _SUPPLEMENTARY_MARKERS):
+        return True
+    return bool(re.search(r"\bs\d+\b", haystack))
 
 
 class _PdfLinkParser(HTMLParser):
@@ -943,7 +1123,10 @@ def _is_pdf_response(
 
 
 def _looks_like_pdf_url(url: str) -> bool:
-    return urlparse(url).path.lower().endswith(".pdf")
+    # Delegates to the shared matcher, which knows the publisher endpoint shapes
+    # that do not end in ".pdf". Body bytes are still checked separately, so a
+    # broader URL match cannot cause an HTML page to be saved as a PDF.
+    return looks_like_pdf_url(url)
 
 
 def _looks_like_pdf_body(body: bytes) -> bool:

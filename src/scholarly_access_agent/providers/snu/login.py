@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 SNU_USERNAME_ENV = "SAA_SNU_USERNAME"
 SNU_PASSWORD_ENV = "SAA_SNU_PASSWORD"
@@ -72,6 +73,9 @@ class PageSnapshot:
     title: str = ""
     body_text: str = ""
     has_password_field: bool = False
+    # True when the page exposes full-text affordances (PDF links, article body).
+    # Used to override the word-based login heuristics -- see detect_login_required.
+    has_content_access: bool = False
 
 
 @dataclass(frozen=True)
@@ -96,9 +100,25 @@ def detect_login_required(snapshot: PageSnapshot) -> LoginDetection:
     text = f"{snapshot.title}\n{snapshot.body_text}".lower()
     combined = f"{url}\n{text}"
 
-    if "snu.ac.kr" in url and _contains_any(url, SNU_LOGIN_URL_MARKERS):
+    # 1. Hard signal: we actually landed on the SNU login / SSO page.
+    #    This is the only fully reliable indicator, so it is checked first.
+    if _is_snu_login_url(url):
         return _login_required()
 
+    # 2. Access-granted override.
+    #    On a *successfully proxied* publisher page the word-based heuristics below
+    #    are unreliable in both directions:
+    #      - the proxy injects the institution name ("Seoul National University")
+    #        into every page it serves, so SNU_TEXT_MARKERS matches on success;
+    #      - publisher headers/footers carry "Login" / "Sign in" / "Password" links
+    #        (and often a collapsed login form with a real password input) even when
+    #        the full text is fully available.
+    #    Together those made every Wiley article page read as a login wall.
+    #    So when the page exposes full-text affordances, trust that over the words.
+    if snapshot.has_content_access:
+        return LoginDetection(required=False)
+
+    # 3. Weak signals -- only consulted when the page showed no content at all.
     if snapshot.has_password_field and _contains_any(combined, SNU_TEXT_MARKERS):
         return _login_required()
 
@@ -110,6 +130,26 @@ def detect_login_required(snapshot: PageSnapshot) -> LoginDetection:
         return _login_required()
 
     return LoginDetection(required=False)
+
+
+def _is_snu_login_url(url: str) -> bool:
+    """True only for SNU's own login/SSO pages.
+
+    The proxy rewrites every publisher host to ``<publisher>-ssl.libproxy.snu.ac.kr``,
+    so *every* proxied URL contains "snu.ac.kr". Matching markers anywhere in the URL
+    therefore misfires on any article whose path happens to contain "login", "auth",
+    "sso" and so on. Rewritten publisher hosts are excluded before matching, and the
+    markers are matched against the host and path only (never the query string, which
+    carries the encoded target URL on the proxy entry point).
+    """
+    parsed = urlparse(url if "://" in url else f"https://{url}")
+    host = (parsed.hostname or "").lower()
+    if not host.endswith("snu.ac.kr"):
+        return False
+    # A rewritten publisher host is a publisher page, not an SNU login page.
+    if host.endswith(".libproxy.snu.ac.kr") and host != "libproxy.snu.ac.kr":
+        return False
+    return _contains_any(f"{host}{parsed.path.lower()}", SNU_LOGIN_URL_MARKERS)
 
 
 def _login_required() -> LoginDetection:
@@ -152,8 +192,10 @@ def attempt_auto_login(page: Any) -> bool:
         submit_button.click()
 
         try:
+            # Same host-scoped check as detect_login_required: a bare substring test
+            # would treat any destination URL containing "auth"/"sso" as still-on-login.
             page.wait_for_url(
-                lambda url: not _contains_any(url.lower(), SNU_LOGIN_URL_MARKERS),
+                lambda url: not _is_snu_login_url(str(url).lower()),
                 timeout=15_000,
             )
         except Exception:
@@ -166,7 +208,7 @@ def attempt_auto_login(page: Any) -> bool:
         page.wait_for_timeout(5_000)
 
         current_url = str(getattr(page, "url", "")).lower()
-        if _contains_any(current_url, SNU_LOGIN_URL_MARKERS):
+        if _is_snu_login_url(current_url):
             return False
 
         return True

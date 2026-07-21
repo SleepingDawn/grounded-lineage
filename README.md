@@ -121,6 +121,40 @@ MCP tools: `check_url`, `proxy_url`, `discover_pdfs`, `download_pdf`, `add_domai
 
 ---
 
+## Update Log
+
+### 2026-07-21
+
+Four bug fixes to proxy access and PDF discovery.
+
+**Fixed**
+
+1. **False login-wall detection.** The proxy injects the institution name into every page it relays, and publisher headers/footers almost always carry Login/Sign in links plus a collapsed login form. The "SNU + login + password" word heuristic therefore flagged successfully accessed article pages as paywalled. `PageSnapshot` now carries a `has_content_access` field — if the page exposes a way into the full text (a PDF link), that takes precedence over the word heuristic.
+2. **Substring false positives in URL checks.** Because the proxy rewrites every publisher host to `<publisher>-ssl.libproxy.snu.ac.kr`, *every* proxied URL contains `snu.ac.kr`. Matching `login`/`auth`/`sso` anywhere in the URL misclassified article URLs whose paths contained those strings, and made `attempt_auto_login` report successful logins as failures. Added `_is_snu_login_url()`, which excludes rewritten publisher hosts (`*.libproxy.snu.ac.kr`) and matches markers only in the host and path.
+3. **Missed PDF links and wrong candidate choice.** Detection relied mainly on `href.endsWith('.pdf')`, but most publisher PDF endpoints do not end in `.pdf` (Wiley `/doi/pdfdirect/`, Elsevier `/pdfft`, Springer `/content/pdf/`, IEEE `/stamp/stamp.jsp`, RSC `/articlepdf/`, OUP `/article-pdf/`, PLOS `type=printable`). Only the first candidate was tried, so Wiley's `/doi/pdf/` — an HTML viewer wrapper — always failed. Added `looks_like_pdf_url()` and `pdf_url_rank()` in `core/urls.py` (0 = serves bytes, 1 = ambiguous, 2 = viewer wrapper); candidates are now ranked and up to four are tried, supplementary files are deprioritized, direct URLs are derived from viewer URLs, and PDF endpoints are synthesized from the article URL on platforms that expose no DOM link.
+4. **`--pdf-url` ignored the browser profile.** `_download_pdf_direct_playwright` opened a context without `user_data_dir`, so it always connected anonymously and received paywall HTML even though the proxy session cookies live in the profile. It now uses the profile directory.
+
+Also added a direct-access fallback (`_try_direct_access`) for fully open-access publishers, which have no SNU proxy entry and get bounced to a login page when routed through it, and added `academic.oup.com`, `psycnet.apa.org`, `www.frontiersin.org`, `www.mdpi.com`, `peerj.com`, `www.hindawi.com`, and `journals.plos.org` to the domain list.
+
+**Newly working**
+
+Wiley, SAGE, Taylor & Francis, OUP, APS, BMJ, PLOS, Frontiers, Hindawi.
+
+No regressions — ACM, Springer, CUP, ACS, RSC, and AAAS were re-verified against real articles. Over the same article list, publisher PDF collection went from 18 to 40 papers across 7 to 15 publishers.
+
+**Known issues**
+
+| Publisher | Status |
+|-----------|--------|
+| Elsevier (ScienceDirect) | `login_required`. The PDF sits behind a JS-rendered viewer and the proxied direct link is blocked. |
+| IEEE | Reaches the derived `/stamp/stamp.jsp?arnumber=` URL but no PDF bytes are returned. |
+| MDPI, PeerJ | Cloudflare bot challenge under a headless browser. `--headless false` may work; untested. |
+| JSTOR | PDF link detection fails. |
+| Karger | Login does not complete. |
+
+The proxy portal session expires. Use `--profile-dir` for a persistent profile and, when needed, `--headless false` once to log in manually.
+
+---
 
 ## Contributing
 
