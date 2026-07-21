@@ -1,0 +1,24 @@
+# Credentials -- never commit
+.env
+
+# Browser profile: holds the library proxy login session (cookies)
+.profiles/
+
+# Python build / bytecode artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtualenv
+.venv/
+venv/
+
+# Downloaded PDFs (default --download-dir)
+downloads/
+
+# OS
+.DS_Store
+Thumbs.db
