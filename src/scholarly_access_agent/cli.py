@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -117,6 +118,58 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run browser headlessly (default: true).",
     )
 
+    download_many_command = subcommands.add_parser(
+        "download-many",
+        help="Download JSONL-described PDFs through one persistent browser context.",
+    )
+    download_many_command.add_argument(
+        "--input",
+        required=True,
+        help="JSONL input path, or '-' to read from stdin.",
+    )
+    download_many_command.add_argument(
+        "--download-dir",
+        type=Path,
+        default=DEFAULT_DOWNLOAD_DIR,
+        help="Directory for downloaded PDFs.",
+    )
+    download_many_command.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="Per-navigation/network timeout in seconds.",
+    )
+    download_many_command.add_argument(
+        "--profile-dir",
+        type=Path,
+        default=DEFAULT_PROFILE_DIR,
+        help="Persistent browser profile directory for sharing login state.",
+    )
+    download_many_command.add_argument(
+        "--browser-channel",
+        help="Optional browser channel (e.g. chrome, msedge).",
+    )
+    download_many_command.add_argument(
+        "--headless",
+        type=str2bool,
+        nargs="?",
+        const=True,
+        default=True,
+        help="Run browser headlessly (default: true).",
+    )
+    download_many_command.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Maximum number of concurrent downloads (default: 1).",
+    )
+    download_many_command.add_argument(
+        "--per-host-concurrency",
+        type=int,
+        default=1,
+        help="Maximum concurrent downloads for one source host (default: 1).",
+    )
+
     discover_pdfs_command = subcommands.add_parser(
         "discover-pdfs",
         help="Discover all PDF candidate links on an article page.",
@@ -170,6 +223,43 @@ def provider_from_args(args: argparse.Namespace) -> SnuProxyProvider:
 
 def write_json(payload: dict[str, object]) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def write_json_line(payload: dict[str, object]) -> None:
+    print(json.dumps(payload, sort_keys=True), flush=True)
+
+
+def read_batch_jobs(input_path: str):
+    from scholarly_access_agent.runtime.batch import BatchJob
+
+    if input_path == "-":
+        lines = sys.stdin
+    else:
+        lines = Path(input_path).open("r", encoding="utf-8")
+    close_after = input_path != "-"
+    jobs = []
+    try:
+        for line_number, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                payload = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON on input line {line_number}: {exc.msg}"
+                ) from exc
+            if not isinstance(payload, dict):
+                raise ValueError(
+                    f"Input line {line_number} must contain one JSON object."
+                )
+            jobs.append(BatchJob.from_dict(payload))
+    finally:
+        if close_after:
+            lines.close()
+    if not jobs:
+        raise ValueError("Batch input contains no jobs.")
+    return jobs
 
 
 def run(args: argparse.Namespace) -> int:
@@ -241,6 +331,29 @@ def run(args: argparse.Namespace) -> int:
         )
         write_json(result.to_dict())
         return 0 if result.ok else 1
+
+    if args.command == "download-many":
+        from scholarly_access_agent.runtime.batch import download_many
+
+        jobs = read_batch_jobs(args.input)
+        batch = asyncio.run(
+            download_many(
+                jobs,
+                provider=provider,
+                download_dir=args.download_dir,
+                profile_dir=args.profile_dir,
+                browser_channel=args.browser_channel,
+                timeout_seconds=args.timeout_seconds,
+                headless=args.headless,
+                concurrency=args.concurrency,
+                per_host_concurrency=args.per_host_concurrency,
+                on_result=write_json_line,
+            )
+        )
+        write_json_line(batch.summary)
+        if batch.summary["login_required"]:
+            return 3
+        return 0 if batch.summary["failed"] == 0 else 1
 
     if args.command == "discover-pdfs":
         from scholarly_access_agent.runtime.pdf import discover_pdfs

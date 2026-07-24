@@ -24,6 +24,7 @@ from scholarly_access_agent.runtime.browser import (
     _load_sync_playwright,
     capture_page_snapshot,
 )
+from scholarly_access_agent.runtime.storage import load_saved_cookies
 
 
 DEFAULT_DOWNLOAD_DIR = Path("downloads")
@@ -261,6 +262,9 @@ def _download_pdf_direct_playwright(
             user_data_dir=str(resolved_profile_dir), headless=True,
         )
         try:
+            cookies = load_saved_cookies(resolved_profile_dir)
+            if cookies:
+                context.add_cookies(cookies)
             api = context.request
             pdf_resp = api.get(pdf_url, timeout=timeout_ms)
             pdf_headers = dict(pdf_resp.headers)
@@ -403,6 +407,9 @@ def _download_via_playwright(
 
         context = p.chromium.launch_persistent_context(**launch_options)
         try:
+            cookies = load_saved_cookies(profile_dir)
+            if cookies:
+                context.add_cookies(cookies)
             page = context.pages[0] if context.pages else context.new_page()
             page.set_default_timeout(timeout_ms)
 
@@ -656,6 +663,9 @@ def _discover_via_playwright(
         context = p.chromium.launch_persistent_context(**launch_options)
         _trace("[discover] context launched")
         try:
+            cookies = load_saved_cookies(profile_dir)
+            if cookies:
+                context.add_cookies(cookies)
             page = context.pages[0] if context.pages else context.new_page()
             page.set_default_timeout(timeout_ms)
             _trace(f"[discover] navigating to proxy URL (timeout={timeout_ms}ms) ...")

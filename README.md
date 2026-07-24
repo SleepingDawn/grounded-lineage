@@ -6,6 +6,7 @@ CLI tool that uses a Seoul National University library account to access paywall
 - Proxy URL generation for affiliated publisher sites
 - PDF link discovery on article pages (distinguishes full-text from supplementary files)
 - PDF download
+- Resumable JSONL batch downloads with global and per-publisher concurrency limits
 
 ## Supported Publishers
 
@@ -67,6 +68,9 @@ scholarly-access-agent download-pdf https://www.nature.com/articles/s41586-026-1
 # Download a PDF with explicit PDF URL (skip discovery)
 scholarly-access-agent download-pdf https://www.nature.com/articles/s41586-026-10669-3 --pdf-url "https://www.nature.com/.../article.pdf" --download-dir C:/path/to/download
 
+# Download a JSONL batch through one persistent browser context
+scholarly-access-agent download-many --input jobs.jsonl --download-dir C:/path/to/download --profile-dir .profiles/snu --concurrency 3 --per-host-concurrency 2
+
 # Open a proxied URL in a browser (for manual login or inspection)
 scholarly-access-agent open-url https://www.nature.com/articles/s41586-026-10669-3
 
@@ -80,9 +84,26 @@ scholarly-access-agent add-domain publisher.com
 |------|-------------|
 | `--headless false` | Show browser window (for manual login intervention) |
 | `--browser-channel chrome` | Use system Chrome instead of bundled Chromium |
-| `--profile-dir <path>` | Persistent browser profile (preserves login state) |
+| `--profile-dir <path>` | Persistent profile; restores optional `storage-state.json` session cookies |
 | `--timeout-seconds <N>` | Network timeout in seconds (default: 30) |
 | `--download-dir <path>` | Where to save downloaded PDFs |
+
+`download-many` reads one object per line:
+
+```json
+{"id":"slot-001","url":"https://www.nature.com/articles/example","filename":"cohort-NPG-Nature-Smith-2025-Example.pdf"}
+```
+
+It streams one compact JSON result per job followed by a summary. Exit code 3
+means the shared proxy session expired: refresh the persistent profile, then
+rerun the same input. Existing valid PDFs are reported as `already_exists`.
+
+Some SNU portal cookies are session-only and do not survive closing Chromium.
+A user-assisted login should therefore export Playwright storage state to
+`<profile-dir>/storage-state.json`. `open-url --wait-for-login` does this
+automatically; external login helpers should call `context.storage_state()` for
+the same path. Single and batch downloads restore those cookies without
+exposing them in output.
 
 ### Output
 
@@ -122,6 +143,20 @@ MCP tools: `check_url`, `proxy_url`, `discover_pdfs`, `download_pdf`, `add_domai
 ---
 
 ## Update Log
+
+### 2026-07-24
+
+Added resumable parallel downloads with `download-many`.
+
+- Reuses one signed-in browser session for a batch while limiting total and
+  per-publisher concurrency.
+- Streams a result for every job, preserves completed PDFs on retry, and pauses
+  safely when the SNU login expires.
+- Validates PDF bytes before saving and uses atomic file replacement.
+- Restores session-only SNU cookies from `storage-state.json`, so a completed
+  manual login can be reused after the browser closes.
+
+Verified with a 100-paper Nature Portfolio collection using concurrency 3.
 
 ### 2026-07-21
 

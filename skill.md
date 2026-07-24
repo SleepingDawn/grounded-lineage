@@ -21,13 +21,14 @@ All commands are run via Bash/PowerShell using this executable.
 | `proxy-url <URL>` | Generate a proxied URL for a given scholarly article URL |
 | `discover-pdfs <URL>` | Discover all PDF candidate links on an article page |
 | `download-pdf <URL>` | Download a PDF from a given article page URL |
+| `download-many --input <JSONL>` | Download a bounded-concurrency batch through one persistent browser context |
 | `open-url <URL>` | Open a proxied URL in a browser |
 | `add-domain <DOMAIN>` | Add a domain to the built-in SNU proxy domain list |
 
 Use `--help` on any command for full option details. Common flags across commands:
 - `--headless false` — show browser window (useful for manual login)
 - `--browser-channel chrome` — use system Chrome instead of bundled Chromium
-- `--profile-dir <path>` — reuse persistent browser profile (preserves login state)
+- `--profile-dir <path>` — reuse the persistent profile and optional `storage-state.json` session cookies
 - `--timeout-seconds <N>` — network timeout (default: 30)
 
 ## JSON Output
@@ -68,6 +69,14 @@ scholarly-access-agent download-pdf "<ARTICLE_URL>" --pdf-url "<SELECTED_HREF>" 
 - `--download-dir`: absolute path for saving. Example: `C:/Users/<Username>/Desktop` on Windows or `/Users/<Username>/Desktop` on macOS/Linux.
 - Returns `{"ok": true, "output_path": "<DOWNLOAD_DIR>/article.pdf"}`.
 - Report `output_path` to user.
+
+For batch workflows, pass JSONL objects with `id`, `url`, and a basename-only
+`filename` to `download-many`. Use `--concurrency` and
+`--per-host-concurrency` to bound load. The command streams JSONL results and
+returns exit code 3 when login expires; refresh the profile and rerun safely.
+For session-only SNU cookies, complete login with `open-url --wait-for-login`
+or another helper that exports Playwright state to
+`<profile-dir>/storage-state.json`; download commands restore it automatically.
 
 ## Full-Text Selection Rules
 

@@ -12,6 +12,7 @@ from scholarly_access_agent.providers.snu.login import (
     detect_login_required,
 )
 from scholarly_access_agent.providers.snu.proxy import SnuProxyProvider
+from scholarly_access_agent.runtime.storage import load_saved_cookies
 
 
 DEFAULT_PROFILE_DIR = Path(".profiles") / "snu"
@@ -97,6 +98,9 @@ def open_proxied_url(
             **launch_options,
         )
         try:
+            cookies = load_saved_cookies(resolved_profile_dir)
+            if cookies:
+                context.add_cookies(cookies)
             page = _first_page(context)
             page.set_default_timeout(timeout_ms)
             page.goto(proxy_url, wait_until="domcontentloaded", timeout=timeout_ms)
@@ -115,6 +119,10 @@ def open_proxied_url(
                     _reload_after_user_login(page, timeout_ms)
                     snapshot = capture_page_snapshot(page)
                     login = detect_login_required(snapshot)
+                    if not login.required:
+                        context.storage_state(
+                            path=str(resolved_profile_dir / "storage-state.json")
+                        )
 
             if login.required:
                 return BrowserOpenResult(
