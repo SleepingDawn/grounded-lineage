@@ -156,7 +156,7 @@ Added resumable parallel downloads with `download-many`.
 - Restores session-only SNU cookies from `storage-state.json`, so a completed
   manual login can be reused after the browser closes.
 
-Verified with a 100-paper Nature Portfolio collection using concurrency 3.
+Verified with a 100-paper Nature Portfolio collection using concurrency 4.
 
 ### 2026-07-21
 
