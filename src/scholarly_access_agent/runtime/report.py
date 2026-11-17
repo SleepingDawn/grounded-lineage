@@ -67,8 +67,9 @@ FONT_FAMILIES = [
     ("malgun.ttf", "malgunbd.ttf"),
     ("AppleGothic.ttf", None),
 ]
-# Wide-coverage fonts for symbols the main font lacks (Greek, arrows, math).
-FALLBACK_FONTS = ["Arial Unicode.ttf", "DejaVuSans.ttf", "arialuni.ttf", "seguisym.ttf"]
+# Fonts tried in order for symbols the body font lacks (Greek, arrows, math brackets).
+FALLBACK_FONTS = ["Arial Unicode.ttf", "Apple Symbols.ttf", "DejaVuSans.ttf", "arialuni.ttf",
+                  "seguisym.ttf", "cambria.ttf"]
 FONT_DIRS = [
     Path.home() / "Library/Fonts",
     Path("/Library/Fonts"),
@@ -139,17 +140,18 @@ class Fonts:
                                           italic=self.regular, boldItalic=self.bold)
             self.coverage = _cmap(regular)
             self.label = regular.name + (f" + {bold.name}" if bold and bold != regular else "")
-        self.fallback, self.fallback_coverage = None, frozenset()
+        self.fallbacks: list[tuple[str, frozenset[int]]] = []
         for name in FALLBACK_FONTS:
             path = _font_index().get(name.lower())
-            if path:
-                try:
-                    pdfmetrics.registerFont(TTFont("ReportFallback", str(path)))
-                except Exception:  # PostScript-outline or broken font files
-                    continue
-                self.fallback, self.fallback_coverage = "ReportFallback", _cmap(path)
-                self.label += f"; fallback {path.name}"
-                break
+            if not path:
+                continue
+            font_name = f"ReportFallback{len(self.fallbacks)}"
+            try:
+                pdfmetrics.registerFont(TTFont(font_name, str(path)))
+            except Exception:  # PostScript-outline or broken font files
+                continue
+            self.fallbacks.append((font_name, _cmap(path)))
+            self.label += f"; fallback {path.name}"
         self.missing: set[str] = set()
 
     def _pick_family(self) -> tuple[Path | None, Path | None]:
@@ -166,27 +168,28 @@ class Fonts:
     def runs(self, text: str) -> str:
         """Escape text, wrapping characters the body font lacks in the fallback font."""
         out: list[str] = []
-        run, run_fallback = [], False
+        run: list[str] = []
+        run_font: str | None = None
         for ch in text:
             code = ord(ch)
-            use_fallback = False
+            font: str | None = None
             if code not in self.coverage and not ch.isspace():
-                if self.fallback and code in self.fallback_coverage:
-                    use_fallback = True
-                else:
+                font = next((name for name, cover in self.fallbacks if code in cover), None)
+                if font is None:
                     self.missing.add(ch)
-            if use_fallback != run_fallback and run:
-                out.append(self._wrap("".join(run), run_fallback))
+            if font != run_font and run:
+                out.append(self._wrap("".join(run), run_font))
                 run = []
-            run_fallback = use_fallback
+            run_font = font
             run.append(ch)
         if run:
-            out.append(self._wrap("".join(run), run_fallback))
+            out.append(self._wrap("".join(run), run_font))
         return "".join(out)
 
-    def _wrap(self, text: str, fallback: bool) -> str:
+    @staticmethod
+    def _wrap(text: str, font: str | None) -> str:
         escaped = html.escape(text, quote=False)
-        return f'<font name="{self.fallback}">{escaped}</font>' if fallback else escaped
+        return f'<font name="{font}">{escaped}</font>' if font else escaped
 
     def text(self, raw: str) -> str:
         """Paragraph markup for plain text: sub/superscript digits become tags."""
@@ -471,40 +474,37 @@ class _Builder:
         return table
 
     def _column_widths(self, rows: list[list[str]], available: float) -> list[float]:
+        """Browser-like auto layout: share width by max-content, but never below a
+        column's longest word (capped at 18% of the width so one token can't starve the rest)."""
         ncols = len(rows[0])
         pad = 9.0
         size = self.cell.fontSize
+        cap = available * 0.18
         natural = [0.0] * ncols
-        minimum = [0.0] * ncols
+        floor = [0.0] * ncols
         for row in rows:
             for c, markup in enumerate(row):
                 text = _plain(markup)
                 natural[c] = max(natural[c], pdfmetrics.stringWidth(text, self.f.regular, size) * 1.04 + pad)
                 for word in text.split():
-                    minimum[c] = max(minimum[c], min(pdfmetrics.stringWidth(word, self.f.regular, size) + pad,
-                                                     available * 0.28))
-        minimum = [max(m, 28.0) for m in minimum]
-        natural = [max(n, m) for n, m in zip(natural, minimum)]
+                    floor[c] = max(floor[c], min(pdfmetrics.stringWidth(word, self.f.regular, size) + pad, cap))
+        floor = [max(f, 28.0) for f in floor]
+        natural = [max(n, f) for n, f in zip(natural, floor)]
         if sum(natural) <= available:
-            scale = available / sum(natural)
-            return [n * scale for n in natural]
-        if sum(minimum) >= available:
-            scale = available / sum(minimum)
-            return [m * scale for m in minimum]
-        # Give each column its minimum, then share the rest by how much more it wants
-        # (square-root damping keeps one very long column from starving the others).
-        spare = available - sum(minimum)
-        want = [max(n - m, 0.0) ** 0.5 for n, m in zip(natural, minimum)]
-        total = sum(want) or 1.0
-        widths = [m + spare * w / total for m, w in zip(minimum, want)]
-        overflow = sum(max(w - n, 0.0) for w, n in zip(widths, natural))
-        if overflow:
-            capped = [min(w, n) for w, n in zip(widths, natural)]
-            hungry = [i for i, (w, n) in enumerate(zip(capped, natural)) if w < n]
-            for i in hungry:
-                capped[i] += overflow / len(hungry)
-            widths = capped
-        return widths
+            return [n * available / sum(natural) for n in natural]
+        if sum(floor) >= available:
+            return [f * available / sum(floor) for f in floor]
+        fixed: dict[int, float] = {}
+        while True:
+            free = [c for c in range(ncols) if c not in fixed]
+            room = available - sum(fixed.values())
+            total = sum(natural[c] for c in free)
+            share = {c: room * natural[c] / total for c in free}
+            short = [c for c in free if share[c] < floor[c]]
+            if not short:
+                return [fixed[c] if c in fixed else share[c] for c in range(ncols)]
+            for c in short:
+                fixed[c] = floor[c]
 
     def _quote(self, inner: list[Flowable]) -> Flowable:
         box = Table([[inner or ""]], colWidths=[self.width])

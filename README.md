@@ -26,7 +26,7 @@ Tools: `doctor`, `check_url`, `proxy_url`, `read_url`, `discover_pdfs`, `downloa
 
 ## PDF reports
 
-The last step turns the finished Markdown review into a readable A4 PDF: `render_report_pdf` (MCP) or `scholarly-access-agent render-report REPORT.md [-o OUT.pdf]`. It reads only the Markdown and PNG/JPG figures inside the report folder, fetches nothing, and returns `pages`, `font`, `missing_glyphs` and `warnings`. Layout: Korean TrueType body font (NanumBarunGothic first; override with `SNU_REPORT_FONT`/`SNU_REPORT_FONT_BOLD`) with a symbol fallback, 9.6 pt body, tables with repeated headers and content-sized columns, PDF outline from `##`/`###`, page n/N footer. Report structure and checks: `skills/snu-library-scholarly-access/references/report-pdf.md`.
+The last step turns the finished Markdown review into a readable A4 PDF: `render_report_pdf` (MCP) or `scholarly-access-agent render-report REPORT.md [-o OUT.pdf]`. It reads only the Markdown and PNG/JPG figures inside the report folder, fetches nothing, and returns `pages`, `font`, `missing_glyphs` and `warnings`. Layout: Korean TrueType body font (NanumBarunGothic first; override with `SNU_REPORT_FONT`/`SNU_REPORT_FONT_BOLD`) with symbol fallback fonts tried in order, 9.6 pt body, tables with repeated headers and content-sized columns, PDF outline from `##`/`###`, page n/N footer. Report structure and checks: `skills/snu-library-scholarly-access/references/report-pdf.md`.
 
 ## Verify
 

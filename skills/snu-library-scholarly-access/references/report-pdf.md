@@ -9,6 +9,6 @@ Structure:
 
 Authoring: pipe tables only; figures as local PNG/JPG inside the report folder (`![caption](figs/x.png)`), since SVG and remote images are skipped; no raw HTML except `<sub>`, `<sup>`, `<br>`. `**bold**` before a Korean particle and Unicode sub/superscripts (H₂, Å³) are handled.
 
-Layout the renderer applies: A4; a Korean TrueType body font (NanumBarunGothic first, then NanumGothic, Noto Sans KR, Malgun Gothic; override with `SNU_REPORT_FONT`/`SNU_REPORT_FONT_BOLD`) with a wide-coverage fallback for symbols; 9.6 pt body at 1.6 leading; 7.9 pt tables with repeated headers, zebra rows and content-sized columns; one ink and one accent colour, all text at least 4.5:1 contrast; title and page n/N footer.
+Layout the renderer applies: A4; a Korean TrueType body font (NanumBarunGothic first, then NanumGothic, Noto Sans KR, Malgun Gothic; override with `SNU_REPORT_FONT`/`SNU_REPORT_FONT_BOLD`) with wide-coverage fallbacks for symbols, tried in order; 9.6 pt body at 1.6 leading; 7.9 pt tables with repeated headers, zebra rows and content-sized columns; one ink and one accent colour, all text at least 4.5:1 contrast; title and page n/N footer.
 
 Before delivering: `missing_glyphs` must be empty and `warnings` explained; view the first page and one table page as images (for example `pdftoppm -r 70 -png`). Basis: reportlab Platypus as in Anthropic's `pdf` skill and the palette, font-pairing and contrast guidance of its `theme-factory` skill (anthropics/skills); neither is vendored.
