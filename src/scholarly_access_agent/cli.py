@@ -218,6 +218,16 @@ def build_parser() -> argparse.ArgumentParser:
     read_url_command.add_argument("--sections", nargs="+", help="Section names to read in full; omit with --terms.")
     read_url_command.add_argument("--max-chars", type=int, default=12000)
 
+    render_report_command = subcommands.add_parser(
+        "render-report",
+        help="Render a finished Markdown research report to a readable A4 PDF (local files only).",
+    )
+    render_report_command.add_argument("path", help="Report Markdown file (.md).")
+    render_report_command.add_argument(
+        "-o", "--output", type=Path,
+        help="Output .pdf path (default: next to the Markdown file, same name).",
+    )
+
     subcommands.add_parser(
         "mcp-server",
         help="Start the MCP tool process over standard I/O.",
@@ -298,6 +308,12 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "read-url":
         from scholarly_access_agent.runtime.public import read_url
         result = read_url(args.url, terms=args.terms, sections=args.sections, max_chars=args.max_chars)
+        write_json(result)
+        return 0 if result["ok"] else 1
+
+    if args.command == "render-report":
+        from scholarly_access_agent.runtime.report import render_report
+        result = render_report(args.path, args.output)
         write_json(result)
         return 0 if result["ok"] else 1
 

@@ -22,7 +22,11 @@ Run `scripts/서울대 로그인.command` for user-assisted SNU sign-in. Passwor
 
 The canonical skill is `skills/snu-library-scholarly-access/SKILL.md`; references separate workflow, DFT/MLIP criteria, evidence format and authentication. Installed copies add a local executable hint, excluded from the upload ZIP.
 
-Tools: `doctor`, `check_url`, `proxy_url`, `read_url`, `discover_pdfs`, `download_pdf`, `read_pdf`, `add_domain`. Workflow is text first: `read_url` reads open-access HTML (arXiv, PMC, Europe PMC, chemRxiv, bioRxiv) as an outline, term excerpts or whole sections; `download_pdf` fetches open-repository PDFs directly and publisher PDFs through the SNU session, for paywalled papers, page citations or figures. Large reviews delegate reading to sub-agents that return compact evidence records. MCP download operations always run headless. CLI and MCP share the same reading/downloading implementation. Doctor checks session presence, not validity. Subscription access does not establish external AI permission; see https://lib.snu.ac.kr/find/databases_openaccess/tdm/ . Scanned PDFs require OCR or visual review. For `read_pdf`, choose `terms` OR `pages`; never both. `pages_scanned` reports search coverage, not pages fully reviewed by the agent.
+Tools: `doctor`, `check_url`, `proxy_url`, `read_url`, `discover_pdfs`, `download_pdf`, `read_pdf`, `render_report_pdf`, `add_domain`. Workflow is text first: `read_url` reads open-access HTML (arXiv, PMC, Europe PMC, chemRxiv, bioRxiv) as an outline, term excerpts or whole sections; `download_pdf` fetches open-repository PDFs directly and publisher PDFs through the SNU session, for paywalled papers, page citations or figures. Large reviews delegate reading to sub-agents that return compact evidence records. MCP download operations always run headless. CLI and MCP share the same reading/downloading implementation. Doctor checks session presence, not validity. Subscription access does not establish external AI permission; see https://lib.snu.ac.kr/find/databases_openaccess/tdm/ . Scanned PDFs require OCR or visual review. For `read_pdf`, choose `terms` OR `pages`; never both. `pages_scanned` reports search coverage, not pages fully reviewed by the agent.
+
+## PDF reports
+
+The last step turns the finished Markdown review into a readable A4 PDF: `render_report_pdf` (MCP) or `scholarly-access-agent render-report REPORT.md [-o OUT.pdf]`. It reads only the Markdown and PNG/JPG figures inside the report folder, fetches nothing, and returns `pages`, `font`, `missing_glyphs` and `warnings`. Layout: Korean TrueType body font (NanumBarunGothic first; override with `SNU_REPORT_FONT`/`SNU_REPORT_FONT_BOLD`) with a symbol fallback, 9.6 pt body, tables with repeated headers and content-sized columns, PDF outline from `##`/`###`, page n/N footer. Report structure and checks: `skills/snu-library-scholarly-access/references/report-pdf.md`.
 
 ## Verify
 
@@ -42,5 +46,7 @@ Design references (consulted 2026-11-17):
 - https://github.com/K-Dense-AI/scientific-agent-skills/tree/main/skills/research-lookup
 - https://liyux3.github.io/scholar-mcp/research-workflows/
 - https://github.com/Future-House/paper-qa
+- https://github.com/anthropics/skills/tree/main/skills/pdf (consulted 2026-11-18; reportlab Platypus rendering, sub/superscript markup rule)
+- https://github.com/anthropics/skills/tree/main/skills/theme-factory (consulted 2026-11-18; one palette and font pairing, contrast first)
 
-Their workflow patterns informed original instructions here; their code was not vendored.
+Their workflow and rendering patterns informed original code and instructions here; their code and text were not vendored.

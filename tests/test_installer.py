@@ -10,4 +10,4 @@ class InstallTests(unittest.TestCase):
             self.assertTrue((target/'SKILL.md').is_file())
             self.assertTrue((target/'references/dft-mlip.md').is_file())
             self.assertIn('/opt/test/bin/',(target/'references/local-runtime.md').read_text())
-            self.assertEqual(len(list(target.rglob('*.md'))),6)
+            self.assertEqual(len(list(target.rglob('*.md'))),7)
