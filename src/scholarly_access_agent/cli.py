@@ -210,6 +210,14 @@ def build_parser() -> argparse.ArgumentParser:
     read_pdf_command.add_argument("--pages", default="1-5", help="Page or range; ignored when terms are provided.")
     read_pdf_command.add_argument("--max-chars", type=int, default=16000)
 
+    read_url_command = subcommands.add_parser(
+        "read-url", help="Text-first reading of open-access HTML full text (arXiv, PMC) with section names.",
+    )
+    read_url_command.add_argument("url", help="arXiv abs/pdf/html URL or another open-repository article URL.")
+    read_url_command.add_argument("--terms", nargs="+", help="Up to 12 terms to locate (excerpts with section names).")
+    read_url_command.add_argument("--sections", nargs="+", help="Section names to read in full; omit with --terms.")
+    read_url_command.add_argument("--max-chars", type=int, default=12000)
+
     subcommands.add_parser(
         "mcp-server",
         help="Start the MCP tool process over standard I/O.",
@@ -287,6 +295,12 @@ def run(args: argparse.Namespace) -> int:
         write_json(result)
         return 0 if result["ok"] else 1
 
+    if args.command == "read-url":
+        from scholarly_access_agent.runtime.public import read_url
+        result = read_url(args.url, terms=args.terms, sections=args.sections, max_chars=args.max_chars)
+        write_json(result)
+        return 0 if result["ok"] else 1
+
     if args.command == "proxy-url":
         write_json(
             {
@@ -341,6 +355,12 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "download-pdf":
         pdf_url = getattr(args, "pdf_url", None) or None
+        from scholarly_access_agent.runtime.public import download_public_pdf, is_public_url, pdf_url_for
+        public_target = pdf_url_for(pdf_url or args.url)
+        if public_target and is_public_url(public_target):
+            public = download_public_pdf(public_target, download_dir=args.download_dir, timeout_seconds=args.timeout_seconds)
+            write_json(public)
+            return 0 if public["ok"] else 1
         result = download_pdf(
             args.url,
             provider=provider,

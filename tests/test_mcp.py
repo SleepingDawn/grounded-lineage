@@ -17,7 +17,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                     await client.initialize()
                     listed = await client.list_tools()
                     names = {t.name for t in listed.tools}
-                    self.assertTrue({'read_pdf','doctor','download_pdf'} <= names)
+                    self.assertTrue({'read_pdf','read_url','doctor','download_pdf'} <= names)
                     download = next(t for t in listed.tools if t.name == 'download_pdf')
                     self.assertNotIn('headless', download.inputSchema['properties'])
                     result = await client.call_tool('read_pdf', {'path':str(pdf),'pages':'2'})
