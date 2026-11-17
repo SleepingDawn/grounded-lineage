@@ -12,10 +12,14 @@ from scholarly_access_agent.providers.snu.login import (
     detect_login_required,
 )
 from scholarly_access_agent.providers.snu.proxy import SnuProxyProvider
-from scholarly_access_agent.runtime.storage import load_saved_cookies
+from scholarly_access_agent.runtime.storage import (
+    ensure_private_profile, load_saved_cookies, save_storage_state,
+)
 
 
-DEFAULT_PROFILE_DIR = Path(".profiles") / "snu"
+DEFAULT_PROFILE_DIR = (
+    Path.home() / ".local" / "share" / "snu-library-scholarly-access" / "profile"
+)
 DEFAULT_TIMEOUT_MS = 15_000
 
 
@@ -84,7 +88,7 @@ def open_proxied_url(
 
     proxy_url = provider.proxied_url(source_url)
     factory = playwright_factory or _load_sync_playwright()
-    resolved_profile_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_profile(resolved_profile_dir)
 
     with factory() as playwright:
         launch_options: dict[str, object] = {
@@ -107,22 +111,12 @@ def open_proxied_url(
             snapshot = capture_page_snapshot(page)
             login = detect_login_required(snapshot)
 
-            if login.required:
-                from scholarly_access_agent.providers.snu.login import attempt_auto_login
-                auto_login_ok = attempt_auto_login(page)
-                if auto_login_ok:
-                    snapshot = capture_page_snapshot(page)
-                    login = detect_login_required(snapshot)
-                elif wait_for_login:
-                    _write_login_prompt(login.message or "", stderr or sys.stderr)
-                    input_func("")
-                    _reload_after_user_login(page, timeout_ms)
-                    snapshot = capture_page_snapshot(page)
-                    login = detect_login_required(snapshot)
-                    if not login.required:
-                        context.storage_state(
-                            path=str(resolved_profile_dir / "storage-state.json")
-                        )
+            if login.required and wait_for_login:
+                _write_login_prompt(login.message or "", stderr or sys.stderr)
+                input_func("")
+                _reload_after_user_login(page, timeout_ms)
+                snapshot = capture_page_snapshot(page)
+                login = detect_login_required(snapshot)
 
             if login.required:
                 return BrowserOpenResult(
@@ -137,6 +131,9 @@ def open_proxied_url(
                     reason=login.reason,
                     message=login.message,
                 )
+
+            if wait_for_login:
+                save_storage_state(resolved_profile_dir, context.storage_state())
 
             return BrowserOpenResult(
                 ok=True,

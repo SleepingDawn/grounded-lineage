@@ -1,5 +1,7 @@
 # Credentials -- never commit
 .env
+.env.*
+!.env.example
 
 # Browser profile: holds the library proxy login session (cookies)
 .profiles/
@@ -22,3 +24,12 @@ downloads/
 # OS
 .DS_Store
 Thumbs.db
+
+# Private runtime and generated packages
+*.pdf
+*.zip
+storage-state.json
+*cookie*
+*.backup-*
+references/local-runtime.md
+reports/

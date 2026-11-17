@@ -38,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
+    subcommands.add_parser("doctor", help="Check runtime and session presence without exposing secrets.")
+
     proxy_url = subcommands.add_parser("proxy-url", help="Build a provider proxy URL.")
     proxy_url.add_argument("url", help="Article or publisher URL to proxy.")
 
@@ -200,13 +202,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run browser headlessly (default: true).",
     )
 
+    read_pdf_command = subcommands.add_parser(
+        "read-pdf", help="Read local PDF pages or locate terms with page-grounded excerpts.",
+    )
+    read_pdf_command.add_argument("path", help="Local PDF path from download-pdf or a user-provided PDF.")
+    read_pdf_command.add_argument("--terms", nargs="+", help="Up to 12 English/scientific terms or phrases to locate.")
+    read_pdf_command.add_argument("--pages", default="1-5", help="Page or range; ignored when terms are provided.")
+    read_pdf_command.add_argument("--max-chars", type=int, default=16000)
+
     subcommands.add_parser(
         "mcp-server",
         help="Start the MCP tool process over standard I/O.",
     )
     subcommands.add_parser(
         "setup",
-        help="Set up and personalize path settings in skill.md for this system.",
+        help="Install the canonical skill for the current Codex and Claude Code user.",
     )
     add_domain = subcommands.add_parser(
         "add-domain",
@@ -265,6 +275,18 @@ def read_batch_jobs(input_path: str):
 def run(args: argparse.Namespace) -> int:
     provider = provider_from_args(args)
 
+    if args.command == "doctor":
+        from scholarly_access_agent.runtime.diagnostics import diagnose
+        result = diagnose()
+        write_json(result)
+        return 0 if result["ok"] else 1
+
+    if args.command == "read-pdf":
+        from scholarly_access_agent.runtime.reader import read_pdf
+        result = read_pdf(args.path, terms=args.terms, pages=args.pages, max_chars=args.max_chars)
+        write_json(result)
+        return 0 if result["ok"] else 1
+
     if args.command == "proxy-url":
         write_json(
             {
@@ -309,7 +331,7 @@ def run(args: argparse.Namespace) -> int:
                     "profile_dir": str(args.profile_dir.resolve()),
                     "status": "unavailable",
                     "reason": "missing_playwright",
-                    "message": str(exc),
+                    "message": type(exc).__name__,
                 }
             )
             return 2
@@ -373,53 +395,8 @@ def run(args: argparse.Namespace) -> int:
         return run_mcp_server()
 
     if args.command == "setup":
-        executable_name = "scholarly-access-agent.exe" if sys.platform == "win32" else "scholarly-access-agent"
-        exec_path = Path(sys.executable).parent / executable_name
-        
-        # Resolve skill.md path relative to package source
-        root_dir = Path(__file__).resolve().parents[2]
-        skill_path = root_dir / "skill.md"
-        
-        if not skill_path.exists():
-            write_json({
-                "ok": False,
-                "message": f"Could not find skill.md at {skill_path}. Make sure you run this from the cloned repository."
-            })
-            return 1
-            
-        content = skill_path.read_text(encoding="utf-8")
-        
-        # Replace the line below "## CLI Executable" with the actual path
-        lines = content.splitlines()
-        updated_lines = []
-        skip_next = False
-        replaced = False
-        
-        for line in lines:
-            if skip_next:
-                skip_next = False
-                continue
-            updated_lines.append(line)
-            if line.strip() == "## CLI Executable":
-                formatted_path = str(exec_path.resolve()).replace("\\", "/")
-                updated_lines.append(f"`{formatted_path}`")
-                skip_next = True
-                replaced = True
-                
-        if not replaced:
-            write_json({
-                "ok": False,
-                "message": "Could not find '## CLI Executable' section in skill.md"
-            })
-            return 1
-            
-        skill_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
-        
-        write_json({
-            "ok": True,
-            "message": "Successfully personalized skill.md",
-            "cli_path": str(exec_path.resolve()).replace("\\", "/")
-        })
+        from scholarly_access_agent.installer import main as install_skills
+        install_skills()
         return 0
 
     if args.command == "add-domain":
@@ -437,7 +414,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return run(args)
     except Exception as exc:
-        write_json({"ok": False, "error": type(exc).__name__, "message": str(exc)})
+        write_json({"ok": False, "error": type(exc).__name__, "message": type(exc).__name__})
         return 2
 
 

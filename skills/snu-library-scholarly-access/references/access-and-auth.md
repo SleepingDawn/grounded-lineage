@@ -1,0 +1,8 @@
+# SNU access and authentication
+Use original publisher URLs and the dedicated profile at `~/.local/share/snu-library-scholarly-access/profile`. Do not use an everyday browser profile. Files are owner-only but not encrypted.
+
+Use public authorized versions when available. SNU login provides access, not blanket permission for automated collection or external AI processing. Check applicable publisher/SNU conditions for subscription content: https://lib.snu.ac.kr/find/databases_openaccess/tdm/ . If restricted, seek an authorized public copy or report the limitation. Do not bulk-download or bypass access controls.
+
+On `login_required`, ask the user to run the repository's `scripts/서울대 로그인.command` or `scholarly-access-agent open-url ARTICLE_URL --wait-for-login --headless false`. User signs in directly and presses Enter. Never request or inspect passwords/cookies. Retry once after confirmed renewal. Stop repeated failures or unsupported publishers; do not auto-add domains.
+
+MCP/CLI tools: `doctor`; `check_url`/`check-url`; `proxy_url`/`proxy-url`; `discover_pdfs`/`discover-pdfs`; `download_pdf`/`download-pdf`; `read_pdf`/`read-pdf PATH --terms TERM ...` or `--pages 3-5`. Routine downloads are headless. The `download_pdf` output includes `output_path`.

@@ -24,7 +24,7 @@ from scholarly_access_agent.runtime.pdf import (
     derive_candidates_from_source,
     rank_pdf_candidates,
 )
-from scholarly_access_agent.runtime.storage import load_saved_cookies
+from scholarly_access_agent.runtime.storage import ensure_private_profile, load_saved_cookies
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,7 @@ async def schedule_jobs(
                             ok=False,
                             status="download_failed",
                             reason=type(exc).__name__,
-                            message=str(exc),
+                            message=type(exc).__name__,
                         )
                     result["elapsed_ms"] = round(
                         (time.monotonic() - started) * 1000
@@ -150,7 +150,7 @@ async def download_many(
     resolved_download_dir = download_dir.resolve()
     resolved_profile_dir = profile_dir.resolve()
     resolved_download_dir.mkdir(parents=True, exist_ok=True)
-    resolved_profile_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_profile(resolved_profile_dir)
 
     if playwright_factory is None:
         from playwright.async_api import async_playwright

@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "SNU-library-scholarly-access"
-version = "0.1.0"
+version = "0.2.0"
 description = "SNU Library scholarly access tool"
 requires-python = ">=3.10"
-dependencies = ["playwright"]
+dependencies = ["playwright==1.65.2", "pypdf==7.1.0", "fonttools==4.68.0", "mcp==1.30.0"]
 
 [project.scripts]
 scholarly-access-agent = "scholarly_access_agent.cli:main"
@@ -17,3 +17,10 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 scholarly_access_agent = ["data/*.json"]
+
+[project.optional-dependencies]
+dev = ["PyYAML==6.0.3"]
+
+[tool.setuptools.data-files]
+"share/snu-research-agent/snu-library-scholarly-access" = ["skills/snu-library-scholarly-access/SKILL.md"]
+"share/snu-research-agent/snu-library-scholarly-access/references" = ["skills/snu-library-scholarly-access/references/*.md"]

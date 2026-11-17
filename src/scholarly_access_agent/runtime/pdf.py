@@ -24,10 +24,10 @@ from scholarly_access_agent.runtime.browser import (
     _load_sync_playwright,
     capture_page_snapshot,
 )
-from scholarly_access_agent.runtime.storage import load_saved_cookies
+from scholarly_access_agent.runtime.storage import ensure_private_profile, load_saved_cookies
 
 
-DEFAULT_DOWNLOAD_DIR = Path("downloads")
+DEFAULT_DOWNLOAD_DIR = Path.home() / ".local/share/snu-library-scholarly-access/downloads"
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 USER_AGENT = "scholarly-access-agent/0.1"
@@ -225,7 +225,7 @@ def _download_pdf_direct(
             status="download_failed",
             pdf_url=pdf_url,
             reason="download_failed",
-            message=str(exc.reason),
+            message=type(exc).__name__,
         )
 
     if not _is_pdf_response(pdf.url, pdf.headers, pdf.body):
@@ -256,7 +256,7 @@ def _download_pdf_direct_playwright(
     # Launching a throwaway context here meant --pdf-url always fetched as an
     # anonymous visitor and got an HTML paywall page back instead of the PDF.
     resolved_profile_dir = (profile_dir or DEFAULT_PROFILE_DIR).resolve()
-    resolved_profile_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_profile(resolved_profile_dir)
     with playwright_factory() as p:
         context = p.chromium.launch_persistent_context(
             user_data_dir=str(resolved_profile_dir), headless=True,
@@ -315,7 +315,7 @@ def _download_via_urllib(
             download_dir=download_dir,
             status="download_failed",
             reason="download_failed",
-            message=str(exc.reason),
+            message=type(exc).__name__,
         )
 
     if _is_pdf_response(first.url, first.headers, first.body):
@@ -341,7 +341,7 @@ def _download_via_urllib(
             message=login.message or "Login is required before PDF download.",
         )
 
-    candidates = page.all_pdf_candidates(first.url)
+    candidates = _main_candidates(page.all_pdf_candidates(first.url))
     if not candidates:
         return _failure(
             provider=provider,
@@ -366,7 +366,7 @@ def _download_via_urllib(
             status="download_failed",
             pdf_url=candidate_url,
             reason="download_failed",
-            message=str(exc.reason),
+            message=type(exc).__name__,
         )
 
     if not _is_pdf_response(pdf.url, pdf.headers, pdf.body):
@@ -395,7 +395,7 @@ def _download_via_playwright(
     playwright_factory,
 ) -> PdfDownloadResult:
     timeout_ms = timeout_seconds * 1000
-    profile_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_profile(profile_dir)
 
     with playwright_factory() as p:
         launch_options: dict[str, object] = {
@@ -425,24 +425,12 @@ def _download_via_playwright(
                     download_dir=download_dir,
                     status="download_failed",
                     reason="navigation_failed",
-                    message=str(exc),
+                    message=type(exc).__name__,
                 )
 
             snapshot = capture_page_snapshot(page)
             login = detect_login_required(snapshot)
             if login.required:
-                from scholarly_access_agent.providers.snu.login import attempt_auto_login
-                if attempt_auto_login(page):
-                    try:
-                        page.goto(
-                            proxy_url, wait_until="domcontentloaded", timeout=timeout_ms,
-                        )
-                        _wait_for_page_ready(page, timeout_ms)
-                    except Exception:
-                        pass
-                    snapshot = capture_page_snapshot(page)
-                    login = detect_login_required(snapshot)
-
                 # Open-access publishers (PLOS, Frontiers, MDPI, PeerJ ...) are not
                 # served by the library proxy at all -- proxying them just bounces to
                 # the SNU login page -- yet the article is freely readable. So when
@@ -457,8 +445,8 @@ def _download_via_playwright(
                         source_url=source_url,
                         download_dir=download_dir,
                         status="login_required",
-                        reason="auto_login_incomplete",
-                        message="Auto-login was attempted but the page still requires login.",
+                        reason="login_required",
+                        message="Complete manual login with open-url --wait-for-login, then retry.",
                     )
 
 
@@ -504,6 +492,8 @@ def _download_via_playwright(
                     message="No downloadable PDF link was found on the page.",
                 )
 
+            candidates = _main_candidates(candidates)
+
             # Try candidates in rank order. The first link on the page is often a
             # viewer wrapper that returns HTML (Wiley's /doi/pdf/ is the classic
             # case), so stopping at the first one loses articles that are in fact
@@ -515,7 +505,7 @@ def _download_via_playwright(
                 try:
                     pdf_resp = api.get(candidate.href, timeout=timeout_ms)
                 except Exception as exc:
-                    _trace(f"[download] candidate failed: {exc}")
+                    _trace(f"[download] candidate failed: {type(exc).__name__}")
                     continue
                 last_status, last_url = pdf_resp.status, pdf_resp.url
                 if not pdf_resp.ok:
@@ -581,7 +571,7 @@ def _discover_via_urllib(
             source_url=source_url,
             status="download_failed",
             reason="download_failed",
-            message=str(exc.reason),
+            message=type(exc).__name__,
         )
 
     if _is_pdf_response(first.url, first.headers, first.body):
@@ -647,7 +637,7 @@ def _discover_via_playwright(
     playwright_factory,
 ) -> PdfDiscoverResult:
     timeout_ms = timeout_seconds * 1000
-    profile_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_profile(profile_dir)
 
     with playwright_factory() as p:
         _trace("[discover] playwright loaded")
@@ -678,13 +668,13 @@ def _discover_via_playwright(
                 _wait_for_page_ready(page, timeout_ms)
                 _trace("[discover] page ready")
             except Exception as exc:
-                _trace(f"[discover] navigation failed: {exc}")
+                _trace(f"[discover] navigation failed: {type(exc).__name__}")
                 return _discover_failure(
                     provider=provider,
                     source_url=source_url,
                     status="download_failed",
                     reason="navigation_failed",
-                    message=str(exc),
+                    message=type(exc).__name__,
                 )
 
             _trace("[discover] capturing page snapshot ...")
@@ -692,37 +682,13 @@ def _discover_via_playwright(
             login = detect_login_required(snapshot)
             _trace(f"[discover] login_required={login.required}")
             if login.required:
-                from scholarly_access_agent.providers.snu.login import attempt_auto_login
-                _trace("[discover] attempting auto-login ...")
-                if attempt_auto_login(page):
-                    _trace("[discover] auto-login ok, re-navigating ...")
-                    try:
-                        page.goto(
-                            proxy_url, wait_until="domcontentloaded", timeout=timeout_ms,
-                        )
-                        _wait_for_page_ready(page, timeout_ms)
-                    except Exception:
-                        pass
-                    snapshot = capture_page_snapshot(page)
-                    login = detect_login_required(snapshot)
-                    if login.required:
-                        _trace("[discover] still login_required after auto-login")
-                        return _discover_failure(
-                            provider=provider,
-                            source_url=source_url,
-                            status="login_required",
-                            reason="auto_login_incomplete",
-                            message="Auto-login was attempted but the page still requires login.",
-                        )
-                else:
-                    _trace("[discover] auto-login skipped or failed")
-                    return _discover_failure(
-                        provider=provider,
-                        source_url=source_url,
-                        status="login_required",
-                        reason=login.reason or "login_required",
-                        message=login.message or "Login is required before PDF discovery.",
-                    )
+                return _discover_failure(
+                    provider=provider,
+                    source_url=source_url,
+                    status="login_required",
+                    reason="login_required",
+                    message="Complete manual login with open-url --wait-for-login, then retry.",
+                )
 
             _trace("[discover] running JS pdf link discovery ...")
             candidates = _discover_pdf_links_playwright(page)
@@ -774,7 +740,7 @@ def _try_direct_access(page: Any, source_url: str, timeout_ms: int) -> bool:
         _wait_for_page_ready(page, timeout_ms)
         return True
     except Exception as exc:
-        _trace(f"[direct] direct navigation failed: {exc}")
+        _trace(f"[direct] direct navigation failed: {type(exc).__name__}")
         return False
 
 
@@ -836,7 +802,7 @@ def _discover_pdf_links_playwright(page: Any) -> list[PdfCandidate]:
             }"""
         )
     except Exception as exc:
-        _trace(f"[js-discover] evaluate failed: {exc}")
+        _trace(f"[js-discover] evaluate failed: {type(exc).__name__}")
         return []
 
     candidates: list[PdfCandidate] = []
@@ -1273,3 +1239,8 @@ def _header(headers: Mapping[str, str], name: str) -> str:
         if key.lower() == name.lower():
             return value
     return ""
+
+
+def _main_candidates(candidates: list[PdfCandidate]) -> list[PdfCandidate]:
+    """Never substitute a supplement when the main paper download fails."""
+    return [c for c in candidates if not _is_supplementary(c)]
