@@ -5,4 +5,6 @@ Prefer the journal version of record when one exists: publisher open-access copi
 
 On `login_required`, ask the user to run the repository's `scripts/서울대 로그인.command` or `scholarly-access-agent open-url ARTICLE_URL --wait-for-login --headless false`. User signs in directly and presses Enter. Never request or inspect passwords/cookies. Retry once after confirmed renewal. Stop repeated failures or unsupported publishers; do not auto-add domains.
 
+`status: "blocked"` with `reason: "bot_challenge"` means a publisher bot check or bot block (Cloudflare and similar), not a login problem: do not ask the user to sign in again, do not retry in a loop, never try to solve or bypass it; go to the open-copy routes in publisher-routes.md and record the paper as `RETRIEVAL_FAILED (access restriction: bot check)` if none exists. Only `login_required` calls for a session renewal.
+
 MCP/CLI tools: `doctor` (`probe_url` / `--probe URL` checks the session really serves a subscription PDF); `check_url`/`check-url`; `read_url`/`read-url URL [--terms ...|--sections ...]`; `proxy_url`/`proxy-url`; `discover_pdfs`/`discover-pdfs`; `download_pdf`/`download-pdf`; `read_pdf`/`read-pdf PATH --terms TERM ...` or `--pages 3-5`. Routine downloads are headless. The `download_pdf` output includes `output_path`.

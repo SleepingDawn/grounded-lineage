@@ -31,7 +31,9 @@ def probe_session(url: str, fetch=None) -> dict:
     # the temporary folder (and any probe PDF) is gone here
     status = data.get("status")
     probe = {"probe_url": url, "status": status, "kept_files": False}
-    if status == "login_required" and "403" in str(data.get("message", "")):
+    if status == "blocked" or data.get("reason") == "bot_challenge":
+        probe.update(session_valid=None, advice=BLOCKED_ADVICE)
+    elif status == "login_required" and "403" in str(data.get("message", "")):
         # The downloader infers login_required from a bare HTTP 403. On ScienceDirect that 403 also
         # comes from its Cloudflare bot check (observed 2026-11-20), so the session may be fine.
         probe.update(session_valid=None, advice=BLOCKED_ADVICE)

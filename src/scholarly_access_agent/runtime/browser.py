@@ -8,7 +8,9 @@ from typing import Any, Callable, TextIO
 
 from scholarly_access_agent.core.urls import looks_like_pdf_url
 from scholarly_access_agent.providers.snu.login import (
+    BOT_CHALLENGE_MESSAGE,
     PageSnapshot,
+    detect_bot_challenge,
     detect_login_required,
 )
 from scholarly_access_agent.providers.snu.proxy import SnuProxyProvider
@@ -109,6 +111,32 @@ def open_proxied_url(
             page.set_default_timeout(timeout_ms)
             page.goto(proxy_url, wait_until="domcontentloaded", timeout=timeout_ms)
             snapshot = capture_page_snapshot(page)
+            challenge = detect_bot_challenge(snapshot)
+            if challenge.required and wait_for_login:
+                # Visible window: the user may clear the publisher's check themselves.
+                # The tool never solves or bypasses it.
+                _write_login_prompt(
+                    "The publisher shows a bot check (e.g. Cloudflare). If you choose to, "
+                    "complete it yourself in the browser window, and sign in to SNU if asked.",
+                    stderr or sys.stderr,
+                )
+                input_func("")
+                _reload_after_user_login(page, timeout_ms)
+                snapshot = capture_page_snapshot(page)
+                challenge = detect_bot_challenge(snapshot)
+            if challenge.required:
+                return BrowserOpenResult(
+                    ok=False,
+                    provider=provider.provider_id,
+                    source_url=source_url,
+                    proxy_url=proxy_url,
+                    profile_dir=str(resolved_profile_dir),
+                    current_url=snapshot.url,
+                    title=snapshot.title,
+                    status="blocked",
+                    reason="bot_challenge",
+                    message=BOT_CHALLENGE_MESSAGE,
+                )
             login = detect_login_required(snapshot)
 
             if login.required and wait_for_login:

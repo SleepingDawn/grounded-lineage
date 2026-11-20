@@ -12,7 +12,10 @@ from urllib.parse import urlparse
 
 from scholarly_access_agent.providers.snu.login import (
     PageSnapshot,
+    BOT_CHALLENGE_MESSAGE,
+    detect_bot_challenge,
     detect_login_required,
+    is_bot_challenge_response,
 )
 from scholarly_access_agent.providers.snu.proxy import SnuProxyProvider
 from scholarly_access_agent.runtime.browser import DEFAULT_PROFILE_DIR
@@ -221,18 +224,24 @@ async def _download_one(
     page = await context.new_page()
     try:
         page.set_default_timeout(timeout_ms)
-        candidates, response, login_required = await _open_and_discover(
+        candidates, response, blocker = await _open_and_discover(
             page, provider.proxied_url(job.url), job.url, timeout_ms
         )
+        # A publisher bot check concerns this job only (the session is not at fault), so it
+        # never freezes the batch; the derived PDF endpoints are still tried below.
+        page_challenge = blocker == "bot_challenge"
+        login_required = blocker == "login_required"
 
         if login_required:
             # Fully open-access publishers may not be routed by the proxy at all.
             # Try the source page once; if it still cannot expose content, stop the
             # batch so the persistent SNU session can be refreshed by the user.
-            candidates, response, direct_login = await _open_and_discover(
+            candidates, response, direct_blocker = await _open_and_discover(
                 page, job.url, job.url, timeout_ms
             )
-            if direct_login or not candidates:
+            if direct_blocker == "bot_challenge":
+                page_challenge = True
+            elif direct_blocker or not candidates:
                 return _base_result(
                     job,
                     ok=False,
@@ -262,6 +271,8 @@ async def _download_one(
                     )
 
         if not candidates:
+            if page_challenge:
+                return _blocked_result(job)
             return _base_result(
                 job,
                 ok=False,
@@ -272,6 +283,7 @@ async def _download_one(
 
         last_status: int | None = None
         last_url: str | None = None
+        last_challenge = False
         for candidate in candidates[:MAX_PDF_CANDIDATE_ATTEMPTS]:
             try:
                 pdf_response = await context.request.get(
@@ -282,6 +294,12 @@ async def _download_one(
             last_status = pdf_response.status
             last_url = pdf_response.url
             if not pdf_response.ok:
+                try:
+                    head = (await pdf_response.body())[:20000]
+                except Exception:
+                    head = b""
+                last_challenge = is_bot_challenge_response(
+                    pdf_response.status, dict(pdf_response.headers), head)
                 continue
             body = await pdf_response.body()
             if _looks_like_pdf(body):
@@ -295,6 +313,8 @@ async def _download_one(
                     bytes_written=len(body),
                 )
 
+        if last_challenge or page_challenge:
+            return _blocked_result(job, pdf_url=last_url)
         if last_status in {401, 403}:
             return _base_result(
                 job,
@@ -340,8 +360,15 @@ async def _open_and_discover(
             derive_candidates_from_source(source_url, str(page.url))
         )
     snapshot = await _capture_snapshot(page, bool(candidates))
+    if detect_bot_challenge(snapshot).required:
+        return candidates, response, "bot_challenge"
     login = detect_login_required(snapshot)
-    return candidates, response, login.required
+    return candidates, response, ("login_required" if login.required else None)
+
+
+def _blocked_result(job, **extra):
+    return _base_result(job, ok=False, status="blocked", reason="bot_challenge",
+                        message=BOT_CHALLENGE_MESSAGE, **extra)
 
 
 async def _discover_candidates(page: Any) -> list[PdfCandidate]:

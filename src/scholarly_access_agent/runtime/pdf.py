@@ -14,8 +14,11 @@ from urllib.request import Request, urlopen
 
 from scholarly_access_agent.core.urls import looks_like_pdf_url, pdf_url_rank
 from scholarly_access_agent.providers.snu.login import (
+    BOT_CHALLENGE_MESSAGE,
     PageSnapshot,
+    detect_bot_challenge,
     detect_login_required,
+    is_bot_challenge_response,
 )
 from scholarly_access_agent.providers.snu.proxy import SnuProxyProvider
 from scholarly_access_agent.runtime.browser import (
@@ -322,15 +325,16 @@ def _download_via_urllib(
         return _save_pdf(provider, source_url, first.url, first.body, download_dir)
 
     page = _parse_html(first.body, first.headers)
-    login = detect_login_required(
-        PageSnapshot(
-            url=first.url,
-            title=page.title,
-            body_text=page.text,
-            has_password_field=page.has_password_field,
-            has_content_access=bool(page.all_pdf_candidates(first.url)),
-        )
+    first_snapshot = PageSnapshot(
+        url=first.url,
+        title=page.title,
+        body_text=page.text,
+        has_password_field=page.has_password_field,
+        has_content_access=bool(page.all_pdf_candidates(first.url)),
     )
+    if detect_bot_challenge(first_snapshot).required:
+        return _blocked_failure(provider, source_url, download_dir)
+    login = detect_login_required(first_snapshot)
     if login.required:
         return _failure(
             provider=provider,
@@ -429,7 +433,11 @@ def _download_via_playwright(
                 )
 
             snapshot = capture_page_snapshot(page)
-            login = detect_login_required(snapshot)
+            # A challenge page explains a failure but does not end the attempt: some
+            # publishers serve the PDF endpoint while the article page shows a check.
+            page_challenge = detect_bot_challenge(snapshot).required
+            login = (detect_login_required(snapshot) if not page_challenge
+                     else detect_login_required(PageSnapshot(url=snapshot.url)))
             if login.required:
                 # Open-access publishers (PLOS, Frontiers, MDPI, PeerJ ...) are not
                 # served by the library proxy at all -- proxying them just bounces to
@@ -483,6 +491,8 @@ def _download_via_playwright(
                 _trace(f"[download] derived {len(candidates)} candidates from source URL")
 
             if not candidates:
+                if page_challenge:
+                    return _blocked_failure(provider, source_url, download_dir)
                 return _failure(
                     provider=provider,
                     source_url=source_url,
@@ -501,6 +511,7 @@ def _download_via_playwright(
             api = context.request
             last_status: int | None = None
             last_url: str | None = None
+            last_challenge = False
             for candidate in candidates[:MAX_PDF_CANDIDATE_ATTEMPTS]:
                 try:
                     pdf_resp = api.get(candidate.href, timeout=timeout_ms)
@@ -509,12 +520,22 @@ def _download_via_playwright(
                     continue
                 last_status, last_url = pdf_resp.status, pdf_resp.url
                 if not pdf_resp.ok:
+                    try:
+                        head = pdf_resp.body()[:20000]
+                    except Exception:
+                        head = b""
+                    last_challenge = is_bot_challenge_response(
+                        pdf_resp.status, dict(pdf_resp.headers), head)
                     continue
                 pdf_body = pdf_resp.body()
                 if _is_pdf_response(pdf_resp.url, dict(pdf_resp.headers), pdf_body):
                     return _save_pdf(
                         provider, source_url, pdf_resp.url, pdf_body, download_dir,
                     )
+
+            if last_challenge or page_challenge:
+                return _blocked_failure(provider, source_url, download_dir,
+                                        candidates=_candidates_to_dicts(candidates))
 
             if last_status in {401, 403}:
                 return _failure(
@@ -679,6 +700,24 @@ def _discover_via_playwright(
 
             _trace("[discover] capturing page snapshot ...")
             snapshot = capture_page_snapshot(page)
+            if detect_bot_challenge(snapshot).required:
+                _trace("[discover] bot challenge page")
+                derived = _candidates_to_dicts(derive_candidates_from_source(source_url, page.url))
+                if derived:
+                    return PdfDiscoverResult(
+                        ok=True,
+                        provider=provider.provider_id,
+                        source_url=source_url,
+                        status="discovered",
+                        candidates=derived,
+                    )
+                return _discover_failure(
+                    provider=provider,
+                    source_url=source_url,
+                    status="blocked",
+                    reason="bot_challenge",
+                    message=BOT_CHALLENGE_MESSAGE,
+                )
             login = detect_login_required(snapshot)
             _trace(f"[discover] login_required={login.required}")
             if login.required:
@@ -1178,6 +1217,12 @@ def _http_failure(
     download_dir: Path,
     exc: HTTPError,
 ) -> PdfDownloadResult:
+    try:
+        head = exc.read(20000) if exc.fp else b""
+    except Exception:
+        head = b""
+    if is_bot_challenge_response(exc.code, dict(exc.headers or {}), head):
+        return _blocked_failure(provider, source_url, download_dir)
     if exc.code in {401, 403}:
         return _failure(
             provider=provider,
@@ -1194,6 +1239,18 @@ def _http_failure(
         status="download_failed",
         reason="download_failed",
         message=f"HTTP {exc.code}: {exc.reason}",
+    )
+
+
+def _blocked_failure(provider, source_url, download_dir, **extra) -> PdfDownloadResult:
+    return _failure(
+        provider=provider,
+        source_url=source_url,
+        download_dir=download_dir,
+        status="blocked",
+        reason="bot_challenge",
+        message=BOT_CHALLENGE_MESSAGE,
+        **extra,
     )
 
 

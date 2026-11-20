@@ -72,6 +72,86 @@ def detect_login_required(snapshot: PageSnapshot) -> LoginDetection:
     return LoginDetection(required=False)
 
 
+# --- bot-challenge / bot-block pages ------------------------------------------
+# Markers adapted from SleepingDawn/paper_download landing_classifier.py. A challenge is
+# reported, never solved or bypassed. It explains a failure: the downloader still tries
+# PDF endpoints the server serves without a challenge (APS serves its PDF endpoint while
+# the article page shows "Just a moment...", observed 2026-11-20).
+CHALLENGE_URL_MARKERS = (
+    "__cf_chl_rt_tk=",
+    "__cf_chl_",
+    "/cdn-cgi/challenge",
+    "/cdn-cgi/l/chk_captcha",
+    "challenges.cloudflare.com",
+    "cf-turnstile",
+    "/captcha/",
+    "validate.perfdrive.com",
+)
+CHALLENGE_TITLES = (
+    "just a moment",
+    "attention required",
+    "please wait",
+    "잠시만 기다리십시오",  # Cloudflare (ko), observed on ScienceDirect
+    "잠시만 기다려 주세요",
+)
+CHALLENGE_TEXT_MARKERS = (
+    "verify you are human",
+    "are you a robot",
+    "are you human",
+    "checking if the site connection is secure",
+    "checking your browser",
+    "unusual traffic",
+    "enable javascript and cookies to continue",
+    "cloudflare ray id",
+    "performing security verification",
+    "cloudflare_error_1000",  # Cloudflare 1000-series block box (ScienceDirect, observed 2026-11-20)
+    "사람인지 확인",  # "verify you are human" (ko)
+)
+BOT_CHALLENGE_MESSAGE = (
+    "Publisher bot check (e.g. Cloudflare) blocked automated access. This is not an SNU login "
+    "problem and renewing the login does not help; it is not bypassed. Use the open-copy "
+    "fallbacks in publisher-routes.md (HAL / author manuscript, PMC, arXiv)."
+)
+
+
+def detect_bot_challenge(snapshot: PageSnapshot) -> LoginDetection:
+    """A publisher bot-check page (Cloudflare and similar), as opposed to a login wall.
+
+    The challenge URL tokens are decisive. Titles and texts count only when the page shows
+    no full-text affordances, since article pages may mention "captcha" in passing.
+    """
+    url = snapshot.url.lower()
+    if _contains_any(url, CHALLENGE_URL_MARKERS):
+        return _bot_challenge()
+    if snapshot.has_content_access:
+        return LoginDetection(required=False)
+    title = snapshot.title.strip().lower().rstrip(".… ")
+    if any(title.startswith(marker) for marker in CHALLENGE_TITLES):
+        return _bot_challenge()
+    if _contains_any(snapshot.body_text.lower(), CHALLENGE_TEXT_MARKERS):
+        return _bot_challenge()
+    return LoginDetection(required=False)
+
+
+def is_bot_challenge_response(status: int | None, headers: dict | None, body: bytes = b"") -> bool:
+    """True for an HTTP response that is a bot check rather than an access denial.
+
+    Cloudflare marks challenge responses with ``cf-mitigated: challenge``; a 403/503 from
+    Cloudflare whose body carries challenge markup counts too.
+    """
+    lowered = {str(k).lower(): str(v).lower() for k, v in (headers or {}).items()}
+    if "challenge" in lowered.get("cf-mitigated", ""):
+        return True
+    if status in {403, 503} and "cloudflare" in lowered.get("server", ""):
+        head = body[:20000].decode("utf-8", errors="ignore").lower()
+        return any(m in head for m in CHALLENGE_URL_MARKERS + CHALLENGE_TEXT_MARKERS + ("just a moment",))
+    return False
+
+
+def _bot_challenge() -> LoginDetection:
+    return LoginDetection(required=True, reason="bot_challenge", message=BOT_CHALLENGE_MESSAGE)
+
+
 def _is_snu_login_url(url: str) -> bool:
     """True only for SNU's own login/SSO pages.
 
