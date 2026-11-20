@@ -38,7 +38,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    subcommands.add_parser("doctor", help="Check runtime and session presence without exposing secrets.")
+    doctor = subcommands.add_parser("doctor", help="Check runtime and session presence without exposing secrets.")
+    doctor.add_argument(
+        "--probe",
+        metavar="ARTICLE_URL",
+        help="Also fetch one subscription article's PDF headlessly into a temporary folder (deleted at once) "
+             "to check the SNU session really serves PDFs.",
+    )
 
     proxy_url = subcommands.add_parser("proxy-url", help="Build a provider proxy URL.")
     proxy_url.add_argument("url", help="Article or publisher URL to proxy.")
@@ -302,7 +308,7 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "doctor":
         from scholarly_access_agent.runtime.diagnostics import diagnose
-        result = diagnose()
+        result = diagnose(probe_url=args.probe)
         write_json(result)
         return 0 if result["ok"] else 1
 

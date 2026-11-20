@@ -38,7 +38,7 @@ Citation data finds candidates; reading decides the lineage. `scholarly-access-a
 
 Most wall-clock time is waiting, not reading. Overlap the steps; never cut the reading plan below.
 
-1. **Preflight before reading.** Run the session preflight in snu-library-scholarly-access `publisher-routes.md` (one paywalled ScienceDirect download). Ask for an SNU login renewal at once if it fails. An expired session silently downgrades every Elsevier paper to "abstract only".
+1. **Preflight before reading.** Call `doctor(probe_url=<one paywalled ScienceDirect article from the reading list>)` (CLI `doctor --probe <URL>`; see snu-library-scholarly-access `publisher-routes.md`). Ask for an SNU login renewal at once if it fails. An expired session silently downgrades every Elsevier paper to "abstract only".
 2. **Find the lanes early.** While `lineage collect` runs, do 2–3 native searches that combine the topic with each method family you can think of (first-principles/ab initio, machine-learned potential, lattice dynamics, …). Then pass 1 and pass 2 readers can start together. A lane found only after widening means one more serial reading batch.
 3. **Dispatch all reading batches at once,** each with the route for every paper from `publisher-routes.md`, the extraction criteria and the evidence-record shape. Run query tests and widening while they read.
 4. **Draft `lineage.json` while the readers work:** lanes, node ids, edges and axes from abstracts and the analysis. Fill levels, numbers and evidence locators when the records arrive. Read the `lineage init` skeleton before writing it; write the file once, then fix it with small edits and `lineage check`.

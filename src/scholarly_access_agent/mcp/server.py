@@ -199,10 +199,11 @@ async def render_report_tool(markdown_path: str, output_path: str | None = None)
                                    {"markdown_path": markdown_path, "output_path": output_path})
 
 @mcp.tool()
-async def doctor() -> dict[str, Any]:
-    """Check local runtime and session presence without reading secrets. Presence does not establish valid authentication."""
+async def doctor(probe_url: str | None = None) -> dict[str, Any]:
+    """Check local runtime and session presence without reading secrets. Presence does not establish valid authentication. Pass probe_url (one paywalled article page, e.g. ScienceDirect) before dispatching reading batches: it fetches that PDF headlessly through the SNU proxy into a temporary folder that is deleted at once, and reports session_probe.session_valid (true/false/null) with advice. A loaded article page alone does not prove access."""
     from scholarly_access_agent.runtime.diagnostics import diagnose
-    return await asyncio.to_thread(diagnose)
+    # The probe drives a browser: same exception guard as the other browser tools (cookie headers).
+    return await asyncio.to_thread(_private_call, lambda a: diagnose(a["probe_url"]), {"probe_url": probe_url})
 
 @mcp.tool()
 def add_domain(domain: str) -> dict[str, Any]:
