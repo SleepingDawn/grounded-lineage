@@ -3,6 +3,8 @@ For a quick search, agree with the request's scope and use a small shortlist. Fo
 
 Log each query, source, date, and candidate DOI/arXiv ID/URL. Normalize DOI case and resolver prefixes. Merge exact identifiers; title similarity alone needs author/year verification. Keep preprint versions and publication versions linked but separate; do not silently transfer page or section evidence between versions.
 
+**Version priority (journal first).** If a peer-reviewed journal version exists, it is the version to read and cite: try publisher OA HTML/PDF or PMC/Europe PMC (`read_url`), then the SNU subscription route (`download_pdf` → `read_pdf`) subject to access-and-auth.md. Fall back to the arXiv/preprint only when the journal version is unavailable, access-restricted, or retrieval fails, and record the reason (`access restriction` vs `tool error`). A preprint may still be read to supplement content missing from the journal version (e.g., an appendix); mark such evidence as preprint. Sub-agents must follow the same priority and report which version they read.
+
 ## Tiers and default budgets
 State the budget at the start and report what was actually spent.
 
