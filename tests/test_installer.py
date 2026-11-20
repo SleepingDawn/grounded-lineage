@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from scholarly_access_agent.installer import install
+from scholarly_access_agent.installer import SOURCE as SKILL_SOURCE, install
 class InstallTests(unittest.TestCase):
     def test_installs_references_and_local_hint(self):
         with tempfile.TemporaryDirectory() as root:
@@ -9,8 +9,11 @@ class InstallTests(unittest.TestCase):
             install(target,Path('/opt/test/bin/scholarly-access-agent'))
             self.assertTrue((target/'SKILL.md').is_file())
             self.assertTrue((target/'references/dft-mlip.md').is_file())
-            self.assertIn('/opt/test/bin/',(target/'references/local-runtime.md').read_text())
-            self.assertEqual(len(list(target.rglob('*.md'))),8)  # SKILL + 6 references + local-runtime
+            self.assertIn(str(Path('/opt/test/bin/scholarly-access-agent')),(target/'references/local-runtime.md').read_text())
+            references = sorted(p.name for p in (SKILL_SOURCE/'references').glob('*.md'))
+            self.assertIn('publisher-routes.md', references)
+            # SKILL + every reference shipped in the repo + the generated local-runtime hint
+            self.assertEqual(len(list(target.rglob('*.md'))), 1 + len(references) + 1)
 
     def test_installs_research_lineage_skill(self):
         from scholarly_access_agent.installer import SKILLS_DIR

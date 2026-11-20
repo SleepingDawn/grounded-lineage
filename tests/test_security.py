@@ -14,6 +14,16 @@ from scholarly_access_agent.providers.snu.login import PageSnapshot, _is_snu_log
 from scholarly_access_agent.runtime.browser import open_proxied_url
 from scholarly_access_agent.runtime.storage import load_saved_cookies, save_storage_state
 
+# Windows has no POSIX permission bits: chmod only toggles read-only, so 0o600/0o700 cannot be
+# observed there. The session folder then relies on the user profile's ACLs (owner + admins).
+# The mode checks run on POSIX (CI: ubuntu); the rest of each test runs everywhere.
+POSIX = os.name != "nt"
+
+
+def assert_mode(test, path, mode):
+    if POSIX:
+        test.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
+
 
 class LoginSecurityTests(unittest.TestCase):
     def test_only_exact_https_login_origins_are_trusted(self):
@@ -85,7 +95,7 @@ class LoginSecurityTests(unittest.TestCase):
             self.assertTrue(result.ok)
             session = Path(directory) / "storage-state.json"
             self.assertTrue(session.is_file())
-            self.assertEqual(stat.S_IMODE(session.stat().st_mode), 0o600)
+            assert_mode(self, session, 0o600)
 
 
 class SessionSecurityTests(unittest.TestCase):
@@ -97,8 +107,8 @@ class SessionSecurityTests(unittest.TestCase):
                 save_storage_state(profile, {"cookies": [{"name": "session", "value": "dummy"}]})
             finally:
                 os.umask(old)
-            self.assertEqual(stat.S_IMODE(profile.stat().st_mode), 0o700)
-            self.assertEqual(stat.S_IMODE((profile / "storage-state.json").stat().st_mode), 0o600)
+            assert_mode(self, profile, 0o700)
+            assert_mode(self, profile / "storage-state.json", 0o600)
             self.assertEqual(load_saved_cookies(profile)[0]["value"], "dummy")
 
     def test_existing_session_permissions_are_tightened(self):
@@ -108,7 +118,7 @@ class SessionSecurityTests(unittest.TestCase):
             state.write_text('{"cookies": []}')
             state.chmod(0o644)
             load_saved_cookies(profile)
-            self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o600)
+            assert_mode(self, state, 0o600)
 
     def test_session_symlink_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -117,7 +127,10 @@ class SessionSecurityTests(unittest.TestCase):
             target.write_text('{"cookies": []}')
             profile = root / "profile"
             profile.mkdir()
-            (profile / "storage-state.json").symlink_to(target)
+            try:
+                (profile / "storage-state.json").symlink_to(target)
+            except OSError:  # Windows without Developer Mode or admin rights
+                self.skipTest("creating symlinks needs extra privileges on this system")
             with self.assertRaises(ValueError):
                 load_saved_cookies(profile)
 
