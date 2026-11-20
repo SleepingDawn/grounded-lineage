@@ -14,7 +14,7 @@ python3 -m venv .venv
 .venv/bin/scholarly-access-agent doctor
 ```
 
-Connect MCP using `examples/claude-mcp.json` or `examples/codex-mcp.toml`, replacing the executable path. Claude Code: `claude mcp add --scope user snu-library -- /absolute/repo/.venv/bin/scholarly-access-agent mcp-server`. For Claude account Skills upload `dist/snu-library-scholarly-access.zip`. Restart clients after changing tools. A cloud-only session needs a local MCP connection to use local access.
+Connect MCP using `examples/claude-mcp.json` or `examples/codex-mcp.toml`, replacing the executable path. Claude Code: `claude mcp add --scope user snu-library -- /absolute/repo/.venv/bin/scholarly-access-agent mcp-server`. For Claude account Skills upload `dist/snu-library-scholarly-access.zip` and `dist/research-lineage.zip`. Restart clients after changing tools. A cloud-only session needs a local MCP connection to use local access.
 
 ## Authentication and research
 
@@ -27,6 +27,10 @@ Tools: `doctor`, `check_url`, `proxy_url`, `read_url`, `discover_pdfs`, `downloa
 ## PDF reports
 
 The last step turns the finished Markdown review into a readable A4 PDF: `render_report_pdf` (MCP) or `scholarly-access-agent render-report REPORT.md [-o OUT.pdf]`. It reads only the Markdown and PNG/JPG figures inside the report folder, fetches nothing, and returns `pages`, `font`, `missing_glyphs` and `warnings`. Layout: Korean TrueType body font (NanumBarunGothic first; override with `SNU_REPORT_FONT`/`SNU_REPORT_FONT_BOLD`) with symbol fallback fonts tried in order, 9.6 pt body, tables with repeated headers and content-sized columns, PDF outline from `##`/`###`, page n/N footer. Report structure and checks: `skills/snu-library-scholarly-access/references/report-pdf.md`.
+
+## Research lineage
+
+A second skill, `skills/research-lineage/SKILL.md`, traces where a concept came from, how it branched and what is mainstream now. `scholarly-access-agent lineage <command>` does the deterministic part from OpenAlex: `seed`, `collect` (seed, references and citing papers; optional widening by tested boolean queries or by the most-cited ancestors), `analyze` (reference-year spectroscopy, bibliographic-coupling clusters, SPC main path), `keywords` and `query-test` (concept-block queries scored by citation-anchored precision, recall on a gold set of key papers and novelty; logged to `queries.json`), `mentions`, `links` (journal first), `page` (interactive HTML: boxes open the paper, hover shows the lineage) and `report-section` (a Markdown chapter with stage table, trends and a PNG diagram rendered with headless Chromium, for `render-report`). The agent chooses the seed, reads with the tools above, decides the branches and writes the text flow in one `lineage.json` (schema and worked example in the skill). `OPENALEX_API_KEY` raises the OpenAlex quota; it is read from the environment (and the Windows user variable) and never printed. A spent daily quota stops a command with exit code 3; caches are kept so rerunning resumes.
 
 ## Verify
 

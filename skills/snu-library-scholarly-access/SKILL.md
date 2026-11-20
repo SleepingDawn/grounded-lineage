@@ -19,7 +19,11 @@ Read [research-workflow.md](references/research-workflow.md) for tiers, budgets 
 5. **Tier 4 – figures only when decisive.** Use the `image_url` from `read_url`'s figure list (or a PDF page image) only when a figure carries the conclusion and its caption/text is insufficient.
 6. Judge each criterion from Methods/Results/captions. Introduction and reference-list mentions do not establish that a study used a method. A web-page summary produced by another model is a locator, not evidence: confirm numbers you report with `read_url` or `read_pdf` text.
 7. Report access per paper as **본문 확인 (섹션/페이지)**, **초록만 확인**, or **미확인**, with criterion-level judgments. Never infer irrelevance from retrieval or extraction failure. Refine queries for unresolved criteria within the budget; report remaining uncertainty.
-8. **Deliver.** Write the report in Markdown following [report-pdf.md](references/report-pdf.md), render it with `render_report_pdf`, check `missing_glyphs`/`warnings`, and view a page image before handing over the PDF.
+8. **Deliver.** Save each investigation in its own folder under the research root (`SNU_RESEARCH_ROOT`; create it with `scholarly-access-agent lineage init <Topic> --no-lineage`): `README.md` (the report), `<Topic>.pdf`, `evidence/` (records), `figs/`, `archive/` (earlier versions); then add its row to `<root>/README.md`. Write the report in Markdown following [report-pdf.md](references/report-pdf.md), render it with `render_report_pdf`, check `missing_glyphs`/`warnings`, and view a page image before handing over the PDF.
+
+9. **File the papers in ReadCube** when its tools are available: every paper checked and used goes into the list `snu-research-agent/<Topic>` of the personal library. Procedure: [readcube.md](references/readcube.md).
+
+For questions about where a concept or method came from, how it branched and what is mainstream now (연구 흐름, 계보), use the research-lineage skill with this one: it builds the citation lineage and writes a lineage chapter (stage table, trends, diagram) for this report.
 
 For more than about 15 papers to read, delegate Tier 2–3 reading to parallel sub-agents in batches (see research-workflow.md) so the main context holds only compact evidence records.
 

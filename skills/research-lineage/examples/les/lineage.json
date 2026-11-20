@@ -1,0 +1,988 @@
+{
+ "meta": {
+  "page_title": "LES 계보도",
+  "slug": "les_lineage",
+  "date": "2026-11-20",
+  "headline": "Latent Ewald Summation은 어디서 왔고, 지금 어디로 가나",
+  "lede": "MLIP에 장거리 정전기를 넣는 방법들이 1921년 Ewald 합에서 어떻게 갈라졌고, LES가 그 중 어느 가지에서 나왔는지, 그리고 현재 주류와 최전선이 무엇인지 정리했습니다.",
+  "seed_label": "Cheng, npj Comput. Mater. 11:80 (2025)",
+  "seed_ids": [
+   "W4408876037"
+  ],
+  "data_dir": "data",
+  "expanded_dir": "data_x",
+  "focus_regex": "long-range|long range|electrostat|charge|ewald|polariz|coulomb|nonlocal|non-local|dipole|multipole|dielectric",
+  "papers_read": [
+   "W4408876037",
+   "W7128682644",
+   "W7128713787",
+   "W7138135137",
+   "W4321435541"
+  ],
+  "expansion_note": "확장하지 않음"
+ },
+ "lanes": [
+  {
+   "label": [
+    "고전 정전기",
+    "·전하 모델"
+   ],
+   "how": "Ewald 격자합, 전하 평형(QEq), PME: 고정 또는 경험적 전하로 쿨롱 에너지 계산",
+   "limit": "전하가 경험적 매개변수에 묶임"
+  },
+  {
+   "label": [
+    "국소 MLIP",
+    "줄기"
+   ],
+   "how": "원자 에너지를 cutoff 안 국소 환경의 합으로 학습 (BP, GAP, 메시지 패싱 GNN)",
+   "limit": "cutoff 밖 상호작용 없음; 메시지 패싱도 그래프가 끊기면 도달 못 함 (LES p.1)"
+  },
+  {
+   "label": [
+    "A. DFT 전하",
+    "직접 학습"
+   ],
+   "how": "DFT 부분전하나 쌍극자를 라벨로 학습해 쿨롱항 계산",
+   "limit": "부분전하는 관측량이 아니고 분할 방식에 따라 값이 다름 (LES p.1)"
+  },
+  {
+   "label": [
+    "B. 전하 평형",
+    "(QEq)"
+   ],
+   "how": "NN이 전기음성도를 예측하고 QEq로 전하를 전역 결정",
+   "limit": "전역 풀이 비용; 4G는 DFT 전하로 학습"
+  },
+  {
+   "label": [
+    "C. Wannier",
+    "중심 학습"
+   ],
+   "how": "최대국소화 Wannier 중심 위치를 학습",
+   "limit": "절연체 대상 (LES p.1)"
+  },
+  {
+   "label": [
+    "D. 비국소",
+    "표현·구조"
+   ],
+   "how": "전하 없이 장거리 정보를 기술자·메시지·어텐션에 넣음 (LODE, Ewald 메시지패싱, 전역 인코딩)",
+   "limit": "물리 전하가 없어 전기 응답을 직접 꺼내기 어려움"
+  },
+  {
+   "label": [
+    "E. 잠재 전하",
+    "(LES)"
+   ],
+   "how": "국소 특징에서 잠재 전하를 예측하고 Ewald 역공간항에 넣음; 에너지·힘만으로 학습",
+   "limit": "국소 전하라 비국소 전하 재배치는 통계적으로만 흉내 (Grasselli §II.2)"
+  },
+  {
+   "label": [
+    "F. 분극·",
+    "자기일관"
+   ],
+   "how": "유도 분극·자기일관 전하를 범용 모델에 결합 (MACE-POLAR-1, 분극 다중극, 자기일관 설계공간)",
+   "limit": "비용 증가; 아직 초기 단계 (Baldwin §VIII)"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "ewald",
+   "lane": 0,
+   "year": 1921,
+   "title": "Ewald 합",
+   "sub": "Ewald 1921",
+   "openalex": "W2001676859",
+   "note": "주기계 쿨롱 격자합을 실공간과 역공간으로 나눠 계산"
+  },
+  {
+   "id": "qeq",
+   "lane": 0,
+   "year": 1991,
+   "title": "전하 평형 QEq",
+   "sub": "Rappé 1991",
+   "openalex": "W2170006871",
+   "note": "전기음성도·경도로 전하를 전역 평형"
+  },
+  {
+   "id": "pme",
+   "lane": 0,
+   "year": 1993,
+   "title": "PME",
+   "sub": "Darden 1993",
+   "openalex": "W2067174909",
+   "note": "역공간항을 격자+FFT로 N log N에 계산"
+  },
+  {
+   "id": "bp",
+   "lane": 1,
+   "year": 2007,
+   "title": "BP 신경망 포텐셜",
+   "sub": "Behler 2007",
+   "openalex": "W2025444507",
+   "note": "원자 에너지 합의 국소 NN 포텐셜. 장거리 누락의 출발점"
+  },
+  {
+   "id": "gap",
+   "lane": 1,
+   "year": 2010,
+   "title": "GAP",
+   "sub": "Bartók 2010",
+   "openalex": "W2083415705",
+   "note": "가우시안 과정 회귀 기반 국소 포텐셜"
+  },
+  {
+   "id": "g3",
+   "lane": 2,
+   "year": 2011,
+   "title": "3G-HDNNP",
+   "sub": "Artrith 2011",
+   "openalex": "W2083956694",
+   "note": "DFT 부분전하를 NN으로 예측해 쿨롱항 계산"
+  },
+  {
+   "id": "cent",
+   "lane": 3,
+   "year": 2015,
+   "title": "CENT",
+   "sub": "Ghasemi 2015",
+   "openalex": "W1596185547",
+   "note": "NN 전기음성도 + QEq, 에너지로 학습한 최초의 ML-QEq"
+  },
+  {
+   "id": "tensormol",
+   "lane": 2,
+   "year": 2018,
+   "title": "TensorMol",
+   "sub": "Yao 2018",
+   "openalex": "W2768213699",
+   "note": "NN에 장거리 물리항을 결합"
+  },
+  {
+   "id": "schnet",
+   "lane": 1,
+   "year": 2018,
+   "title": "SchNet",
+   "sub": "Schütt 2018",
+   "openalex": "W2778051509",
+   "note": "연속 필터 메시지 패싱"
+  },
+  {
+   "id": "physnet",
+   "lane": 2,
+   "year": 2019,
+   "title": "PhysNet",
+   "sub": "Unke 2019",
+   "openalex": "W2923693308",
+   "note": "DFT 쌍극자를 손실에 넣어 부분전하 학습"
+  },
+  {
+   "id": "lode",
+   "lane": 5,
+   "year": 2019,
+   "title": "LODE",
+   "sub": "Grisafi 2019",
+   "openalex": "W2991533556",
+   "note": "1/r 장거리 전위를 국소 기술자로 인코딩"
+  },
+  {
+   "id": "spooky",
+   "lane": 2,
+   "year": 2021,
+   "title": "SpookyNet",
+   "sub": "Unke 2021",
+   "openalex": "W3159653252",
+   "note": "전하·스핀 상태와 비국소 효과를 포함"
+  },
+  {
+   "id": "g4",
+   "lane": 3,
+   "year": 2021,
+   "title": "4G-HDNNP",
+   "sub": "Ko 2021",
+   "openalex": "W3086372695",
+   "note": "NN 전기음성도 + QEq, DFT 전하로 학습"
+  },
+  {
+   "id": "nequip",
+   "lane": 1,
+   "year": 2022,
+   "title": "NequIP",
+   "sub": "Batzner 2022",
+   "openalex": "W4225405705",
+   "note": "E(3) 등변 메시지 패싱"
+  },
+  {
+   "id": "mace",
+   "lane": 1,
+   "year": 2022,
+   "title": "MACE",
+   "sub": "Batatia 2022",
+   "openalex": "W7133185931",
+   "note": "고차 등변 메시지 패싱"
+  },
+  {
+   "id": "dplr",
+   "lane": 4,
+   "year": 2022,
+   "title": "DPLR",
+   "sub": "Zhang 2022",
+   "openalex": "W4220834411",
+   "note": "Wannier 중심을 학습해 장거리 정전기 계산"
+  },
+  {
+   "id": "scfnn",
+   "lane": 4,
+   "year": 2022,
+   "title": "SCFNN",
+   "sub": "Gao 2022",
+   "openalex": "W3202121601",
+   "note": "Wannier 중심으로 전자 응답을 자기일관 예측"
+  },
+  {
+   "id": "ewmp",
+   "lane": 5,
+   "year": 2023,
+   "title": "Ewald 메시지패싱",
+   "sub": "Kosmala 2023",
+   "openalex": "W4323721113",
+   "note": "역공간에서 원자 간 메시지 교환"
+  },
+  {
+   "id": "vqeq",
+   "lane": 3,
+   "year": 2024,
+   "title": "변분 QEq",
+   "sub": "Shaidu 2024",
+   "openalex": "W4392382360",
+   "note": "QEq를 변분적으로 NN에 통합"
+  },
+  {
+   "id": "les",
+   "lane": 6,
+   "year": 2024,
+   "title": "LES",
+   "sub": "Cheng 2024 · 25",
+   "openalex": "W4408876037",
+   "note": "국소 특징 → 잠재 전하 q → Ewald 역공간항. 에너지·힘만으로 학습",
+   "key": true
+  },
+  {
+   "id": "torchpme",
+   "lane": 0,
+   "year": 2025,
+   "title": "torch-pme",
+   "sub": "Loche 2025",
+   "openalex": "W4409271209",
+   "note": "MLIP용 장거리 계산 라이브러리"
+  },
+  {
+   "id": "found",
+   "lane": 1,
+   "year": 2025,
+   "title": "MACE-MP-0",
+   "sub": "Batatia 2025",
+   "openalex": "W4416191329",
+   "note": "MACE 기반 범용 원자 모델"
+  },
+  {
+   "id": "aimnet2",
+   "lane": 2,
+   "year": 2025,
+   "title": "AIMNet2",
+   "sub": "Anstine 2025",
+   "openalex": "W4409919879",
+   "note": "중성·하전 분자용 범용 NN 포텐셜"
+  },
+  {
+   "id": "gaofm",
+   "lane": 3,
+   "year": 2025,
+   "title": "분극 QEq 범용모델",
+   "sub": "Gao 2025",
+   "openalex": "W4416667944",
+   "note": "분극 QEq를 넣은 주기율표 범용 모델"
+  },
+  {
+   "id": "sognet",
+   "lane": 5,
+   "year": 2025,
+   "title": "SOG-Net",
+   "sub": "Ji 2025",
+   "openalex": "W4415488979",
+   "note": "가우시안 합 커널로 장거리 에너지를 학습"
+  },
+  {
+   "id": "king",
+   "lane": 6,
+   "year": 2025,
+   "title": "E·F로 전하 학습",
+   "sub": "King 2025",
+   "openalex": "W4414687828",
+   "note": "에너지·힘만으로 전하와 장거리 상호작용 학습 검증"
+  },
+  {
+   "id": "zhong",
+   "lane": 6,
+   "year": 2025,
+   "title": "전기 응답 (BEC)",
+   "sub": "Zhong 2025",
+   "openalex": "W7116706387",
+   "note": "LES로 Born 유효전하 등 전기 응답 추론"
+  },
+  {
+   "id": "kimlib",
+   "lane": 6,
+   "year": 2025,
+   "title": "LES 라이브러리",
+   "sub": "Kim 2025",
+   "openalex": "W4417191530",
+   "note": "MACE·NequIP·Allegro·CHGNet 등에 붙는 LES 라이브러리"
+  },
+  {
+   "id": "maceqeq",
+   "lane": 3,
+   "year": 2026,
+   "title": "MACE-QEq",
+   "sub": "Vondrák 2026",
+   "openalex": "W7165367660",
+   "note": "등변 MACE에 QEq 결합"
+  },
+  {
+   "id": "efa",
+   "lane": 5,
+   "year": 2026,
+   "title": "유클리드 어텐션",
+   "sub": "Frank 2026",
+   "openalex": "W7140303358",
+   "note": "전역 원자 표현을 선형 비용 어텐션으로"
+  },
+  {
+   "id": "range",
+   "lane": 5,
+   "year": 2026,
+   "title": "전역 인코딩 RANGE",
+   "sub": "Caruso 2026",
+   "openalex": "W7130309213",
+   "note": "가상 노드로 GNN의 범위를 확장"
+  },
+  {
+   "id": "persp",
+   "lane": 6,
+   "year": 2026,
+   "title": "설계 원칙 정리",
+   "sub": "Kim · Cheng 2026",
+   "openalex": "W7128682644",
+   "note": "원칙 ① 환경 의존 전하+쿨롱 ② DFT 전하로 학습 안 함"
+  },
+  {
+   "id": "distill",
+   "lane": 6,
+   "year": 2026,
+   "title": "범용모델에서 증류",
+   "sub": "2026",
+   "openalex": "W7164944616",
+   "note": "범용 MLIP에서 잠재 정전기를 추출"
+  },
+  {
+   "id": "polar",
+   "lane": 7,
+   "year": 2026,
+   "title": "MACE-POLAR-1",
+   "sub": "Batatia 2026",
+   "openalex": "W7131432983",
+   "note": "유도 분극을 포함한 분자용 정전기 범용 모델"
+  },
+  {
+   "id": "scd",
+   "lane": 7,
+   "year": 2026,
+   "title": "자기일관 설계공간",
+   "sub": "Baldwin 2026",
+   "openalex": "W7138135137",
+   "note": "자기일관 정전기 MLIP의 설계공간과 한계"
+  },
+  {
+   "id": "multip",
+   "lane": 7,
+   "year": 2026,
+   "title": "분극 다중극",
+   "sub": "Kim D. 2026",
+   "openalex": "W7160667640",
+   "note": "잠재 다중극 + 선형응답 분극"
+  }
+ ],
+ "edges": [
+  [
+   "ewald",
+   "pme",
+   "s"
+  ],
+  [
+   "ewald",
+   "les",
+   "d"
+  ],
+  [
+   "qeq",
+   "cent",
+   "s"
+  ],
+  [
+   "pme",
+   "torchpme",
+   "s"
+  ],
+  [
+   "bp",
+   "g3",
+   "s"
+  ],
+  [
+   "bp",
+   "schnet",
+   "d"
+  ],
+  [
+   "cent",
+   "g4",
+   "s"
+  ],
+  [
+   "g3",
+   "g4",
+   "s"
+  ],
+  [
+   "tensormol",
+   "physnet",
+   "d"
+  ],
+  [
+   "physnet",
+   "spooky",
+   "s"
+  ],
+  [
+   "physnet",
+   "aimnet2",
+   "d"
+  ],
+  [
+   "schnet",
+   "nequip",
+   "s"
+  ],
+  [
+   "nequip",
+   "mace",
+   "s"
+  ],
+  [
+   "mace",
+   "found",
+   "s"
+  ],
+  [
+   "g4",
+   "vqeq",
+   "s"
+  ],
+  [
+   "g4",
+   "gaofm",
+   "d"
+  ],
+  [
+   "vqeq",
+   "maceqeq",
+   "d"
+  ],
+  [
+   "mace",
+   "maceqeq",
+   "d"
+  ],
+  [
+   "lode",
+   "ewmp",
+   "d"
+  ],
+  [
+   "ewmp",
+   "les",
+   "d"
+  ],
+  [
+   "lode",
+   "sognet",
+   "d"
+  ],
+  [
+   "ewmp",
+   "efa",
+   "d"
+  ],
+  [
+   "ewmp",
+   "range",
+   "d"
+  ],
+  [
+   "pme",
+   "les",
+   "d"
+  ],
+  [
+   "dplr",
+   "les",
+   "d"
+  ],
+  [
+   "les",
+   "king",
+   "s"
+  ],
+  [
+   "les",
+   "zhong",
+   "s"
+  ],
+  [
+   "les",
+   "kimlib",
+   "s"
+  ],
+  [
+   "mace",
+   "kimlib",
+   "d"
+  ],
+  [
+   "kimlib",
+   "persp",
+   "s"
+  ],
+  [
+   "kimlib",
+   "distill",
+   "s"
+  ],
+  [
+   "found",
+   "distill",
+   "d"
+  ],
+  [
+   "mace",
+   "polar",
+   "s"
+  ],
+  [
+   "kimlib",
+   "polar",
+   "m"
+  ],
+  [
+   "polar",
+   "scd",
+   "m"
+  ],
+  [
+   "scd",
+   "multip",
+   "m"
+  ],
+  [
+   "les",
+   "multip",
+   "d"
+  ],
+  [
+   "g4",
+   "scd",
+   "d"
+  ]
+ ],
+ "link_overrides": {
+  "W4323721113": {
+   "url": "https://proceedings.mlr.press/v202/kosmala23a.html",
+   "kind": "proceedings",
+   "venue": "ICML 2023 (PMLR 202)"
+  }
+ },
+ "axes": [
+  {
+   "question": "① 전하(또는 장거리 정보)를 어디서 얻는가",
+   "items": [
+    {
+     "label": "DFT 부분전하·쌍극자를 직접 학습 (A)",
+     "text": "3G-HDNNP, PhysNet, AIMNet. 부분전하는 관측량이 아니고 분할 방식에 따라 달라짐 (LES p.1)."
+    },
+    {
+     "label": "전하 평형으로 전역 결정 (B)",
+     "text": "CENT → 4G-HDNNP → 변분 QEq → MACE-QEq. 먼 거리 전하 이동을 원리적으로 다룸."
+    },
+    {
+     "label": "Wannier 중심 (C)",
+     "text": "DPLR, SCFNN. 절연체 대상."
+    },
+    {
+     "label": "전하 없이 표현·구조로 (D)",
+     "text": "LODE, Ewald 메시지패싱, SOG-Net, 전역 어텐션."
+    },
+    {
+     "label": "에너지·힘만으로 잠재 전하 (E, LES)",
+     "text": "국소 특징 → 잠재 변수 q → Ewald 역공간항. 중성·크기 제약 없음."
+    }
+   ]
+  },
+  {
+   "question": "② 전하가 국소적으로 정해지는가, 자기일관적으로 정해지는가",
+   "text": "Grasselli 외(2026)는 LES를 **암묵적 전하 모델**로 분류하고 비국소 전하 재배치를 통계적으로만 흉내 낸다고 봄 (§II.2). Baldwin 외(2026)는 다중 결함·금속-물 계면에서 자기일관 모델이 필요함을 보임 (§VIII). 2026년의 분기는 이 질문에서 일어나는 중."
+  }
+ ],
+ "axes_note": "\"DFT 전하 없이 에너지로 학습\"이라는 생각은 CENT(2015)에도 있었음 (Grasselli §III.1). LES의 새로움은 QEq 없이 국소 잠재 변수 + Ewald 역공간항만으로 충분하다는 단순화와 범용성.",
+ "verdict": [
+  {
+   "tag": "현재 기본값",
+   "title": "국소 MLIP + 잠재(환경 의존) 전하 + Ewald",
+   "points": [
+    "LES 인용: 2024년 2편 → 2025년 43편 → 2026년 129편 (11월 기준)",
+    "Kim 외(2025) 라이브러리로 MACE, NequIP, Allegro, CHGNet 등에 바로 붙음",
+    "2026년 비교 연구들이 MACE-LES를 대표 장거리 모델로 비교에 넣음"
+   ]
+  },
+  {
+   "tag": "최전선",
+   "title": "분극·자기일관 + 범용 모델",
+   "points": [
+    "MACE-POLAR-1 (2026), 분극 QEq 범용모델 (Gao 2025)",
+    "잠재 다중극 + 선형응답 분극 (Kim D. 2026)",
+    "주경로의 끝이 이 방향으로 이어짐"
+   ]
+  },
+  {
+   "tag": "병행 경쟁",
+   "title": "물리항 없는 전역 어텐션",
+   "points": [
+    "Euclidean fast attention, 전역 인코딩(RANGE), AllScAIP 등 (2026)"
+   ]
+  }
+ ],
+ "evidence": {
+  "main_path_tail": 8,
+  "main_path_note": "경로 앞부분은 DFT → 범용 MLIP의 일반 흐름이라 생략. 계보도의 주황 화살표는 이 경로 중 계보도에 있는 논문끼리 이은 것.",
+  "rpys_note": "1996·1999년의 큰 봉우리(PBE, PAW)와 1964년(Hohenberg–Kohn)은 DFT 방법론이라 계보에서 뺐음.",
+  "cluster_labels": {
+   "0": "응용·범용모델 리뷰",
+   "1": "장거리 방법",
+   "2": "생체분자·전역 표현",
+   "3": "계면·물"
+  },
+  "rpys_years": [
+   1921,
+   1995,
+   2007,
+   2010,
+   2011
+  ]
+ },
+ "rows": [
+  {
+   "year": "1921",
+   "work": "Ewald",
+   "what": "주기계의 쿨롱 격자합을 실공간과 역공간으로 나눠 계산",
+   "change": "원조 (수치 방법)",
+   "lane": 0,
+   "level": "metadata",
+   "evidence": "메타데이터. LES 식(4)가 Ewald 역공간항 형태 (LES 본문 p.2)",
+   "openalex": "W2001676859"
+  },
+  {
+   "year": "1991",
+   "work": "Rappé & Goddard, QEq",
+   "what": "전기음성도와 경도로 전하를 전역 평형시킴",
+   "change": "고정 전하 → 구조 따라 변하는 전하",
+   "lane": 0,
+   "level": "fulltext",
+   "evidence": "인용 맥락 본문 확인 (Grasselli 2026 §III.1)",
+   "openalex": "W2170006871"
+  },
+  {
+   "year": "2007",
+   "work": "Behler & Parrinello",
+   "what": "원자 에너지의 합으로 쓰는 국소 신경망 포텐셜",
+   "change": "국소 근사의 출발점 (장거리 문제의 원인)",
+   "lane": 1,
+   "level": "metadata",
+   "evidence": "메타데이터, LES 서론 (p.1)",
+   "openalex": "W2025444507"
+  },
+  {
+   "year": "2011",
+   "work": "3G-HDNNP (Artrith 외)",
+   "what": "DFT 부분전하를 NN으로 예측해 쿨롱항 계산",
+   "change": "국소 에너지 + 학습한 전하",
+   "lane": 2,
+   "level": "fulltext",
+   "evidence": "본문 확인 (Kim·Cheng 2026 Fig.1 설명)",
+   "openalex": "W2083956694"
+  },
+  {
+   "year": "2015",
+   "work": "CENT (Ghasemi 외)",
+   "what": "NN이 전기음성도를 예측하고 QEq로 전하 결정, 에너지에 맞춰 학습",
+   "change": "전하를 국소 예측 대신 전역 평형으로",
+   "lane": 3,
+   "level": "fulltext",
+   "evidence": "본문 확인 (Grasselli 2026 §III.1: 최초의 ML-QEq)",
+   "openalex": "W1596185547"
+  },
+  {
+   "year": "2019",
+   "work": "PhysNet (Unke 외)",
+   "what": "DFT 쌍극자를 손실에 넣어 부분전하를 학습",
+   "change": "전하 라벨 대신 쌍극자로 제약",
+   "lane": 2,
+   "level": "fulltext",
+   "evidence": "본문 확인 (Kim·Cheng 2026 Fig.1 설명)",
+   "openalex": "W2923693308"
+  },
+  {
+   "year": "2019",
+   "work": "LODE (Grisafi·Ceriotti)",
+   "what": "1/r 형태의 장거리 전위를 국소 기술자로 인코딩",
+   "change": "전하 없이 표현에 장거리 정보",
+   "lane": 5,
+   "level": "fulltext",
+   "evidence": "본문 확인 (LES p.1 서론)",
+   "openalex": "W2991533556"
+  },
+  {
+   "year": "2021",
+   "work": "4G-HDNNP (Ko 외)",
+   "what": "NN 전기음성도 + QEq, DFT 전하로 학습",
+   "change": "3G와 CENT의 결합 → 전역 전하 이동",
+   "lane": 3,
+   "level": "fulltext",
+   "evidence": "본문 확인 (LES p.1)",
+   "openalex": "W3086372695"
+  },
+  {
+   "year": "2022",
+   "work": "DPLR (Zhang 외)",
+   "what": "최대국소화 Wannier 중심 위치를 학습",
+   "change": "부분전하 대신 Wannier 중심 (절연체용)",
+   "lane": 4,
+   "level": "fulltext",
+   "evidence": "본문 확인 (LES p.1)",
+   "openalex": "W4220834411"
+  },
+  {
+   "year": "2022",
+   "work": "SCFNN (Gao 외)",
+   "what": "Wannier 중심으로 전자 응답을 자기일관 예측",
+   "change": "Wannier + 자기일관",
+   "lane": 4,
+   "level": "fulltext",
+   "evidence": "본문 확인 (LES p.1)",
+   "openalex": "W3202121601"
+  },
+  {
+   "year": "2023",
+   "work": "Ewald 메시지패싱 (Kosmala 외)",
+   "what": "역공간에서 원자 간 메시지 교환",
+   "change": "물리 전하 없이 역공간 통신",
+   "lane": 5,
+   "level": "fulltext",
+   "evidence": "본문 확인 (LES p.2: LES와 관련된 방법으로 언급)",
+   "openalex": "W4323721113"
+  },
+  {
+   "year": "2024·25",
+   "work": "LES (Cheng)",
+   "what": "국소 특징 → 잠재 변수 q → Ewald 역공간항. 에너지·힘만으로 학습, 전하 중성·크기 제약 없음",
+   "change": "DFT 전하 라벨을 없앰",
+   "lane": 6,
+   "level": "fulltext",
+   "evidence": "본문 확인 (npj Comput. Mater. 11:80, p.1–2)",
+   "openalex": "W4408876037"
+  },
+  {
+   "year": "2025",
+   "work": "King 외",
+   "what": "LES가 에너지·힘만으로 전하와 장거리 상호작용을 학습함을 확인",
+   "change": "LES 검증·확장",
+   "lane": 6,
+   "level": "abstract",
+   "evidence": "초록",
+   "openalex": "W4414687828"
+  },
+  {
+   "year": "2025",
+   "work": "Zhong 외",
+   "what": "LES로 Born 유효전하 등 전기 응답 추론",
+   "change": "전기 응답으로 확장",
+   "lane": 6,
+   "level": "abstract",
+   "evidence": "초록",
+   "openalex": "W7116706387"
+  },
+  {
+   "year": "2025",
+   "work": "Kim 외, 범용 LES 라이브러리",
+   "what": "MACE, NequIP, Allegro, CACE, CHGNet 등 아무 국소 MLIP에 붙이는 라이브러리",
+   "change": "방법 → 도구",
+   "lane": 6,
+   "level": "abstract",
+   "evidence": "초록 + Kim·Cheng 2026 Fig.2 본문",
+   "openalex": "W4417191530"
+  },
+  {
+   "year": "2025",
+   "work": "Gao 외",
+   "what": "분극 QEq를 넣은 주기율표 전체 범용 모델",
+   "change": "QEq 계열이 범용모델로",
+   "lane": 3,
+   "level": "abstract",
+   "evidence": "초록",
+   "openalex": "W4416667944"
+  },
+  {
+   "year": "2026",
+   "work": "Kim · Cheng (관점)",
+   "what": "원칙 ① 환경 의존 전하 + 쿨롱 형태, ② DFT 전하로 학습하지 않기. QEq는 선택 사항",
+   "change": "LES 계열의 설계 원칙 정리",
+   "lane": null,
+   "level": "fulltext",
+   "evidence": "본문 확인 (PMC, Abstract·Fig.1·QEq 절)",
+   "openalex": "W7128682644"
+  },
+  {
+   "year": "2026",
+   "work": "MACE-POLAR-1 (Batatia 외)",
+   "what": "비자기일관 장 형식으로 유도 분극을 넣은 분자용 정전기 범용 모델",
+   "change": "분극 + 범용모델",
+   "lane": 7,
+   "level": "abstract",
+   "evidence": "초록",
+   "openalex": "W7131432983"
+  },
+  {
+   "year": "2026",
+   "work": "Kim D. 외 (분극 다중극)",
+   "what": "잠재 단극·쌍극·사중극 + 선형응답으로 분극",
+   "change": "잠재 전하 → 잠재 다중극 + 분극",
+   "lane": 7,
+   "level": "abstract",
+   "evidence": "초록",
+   "openalex": "W7160667640"
+  },
+  {
+   "year": "2026",
+   "work": "Baldwin 외",
+   "what": "자기일관 정전기 MLIP의 설계 공간. 비자기일관 모델은 다중 결함·금속-물 계면에서 한계",
+   "change": "자기일관이 필요한 경우를 규정",
+   "lane": 7,
+   "level": "fulltext",
+   "evidence": "본문 확인 (arXiv §Existing Work, §V.2, §VIII)",
+   "openalex": "W7138135137"
+  },
+  {
+   "year": "2026",
+   "work": "Grasselli 외 (관점)",
+   "what": "LES를 '암묵적 전하 모델'로 분류. 국소 전하 모델은 훈련셋 상관을 통해 비국소성을 통계적으로만 흉내",
+   "change": "LES의 원리적 한계 지적",
+   "lane": null,
+   "level": "fulltext",
+   "evidence": "본문 확인 (arXiv §II.2)",
+   "openalex": "W7128713787"
+  }
+ ],
+ "limits": [
+  "코퍼스가 **LES를 인용한 논문** 중심이라 LES 쪽으로 치우침. 확장 결과는 아직 계보도에 반영 안 함.",
+  "Kim·Cheng(2026)의 분류는 LES 저자 자신의 시각이라 Grasselli 외, Baldwin 외로 교차 확인.",
+  "2026년 논문은 인용이 적어 주류 판단은 채택 방식(기준 모델, 라이브러리 통합)과 주경로로 함."
+ ],
+ "vocabulary": [
+  {
+   "concept": "장거리 정전기",
+   "terms": [
+    "long-range",
+    "nonlocal",
+    "non-local",
+    "electrostatic",
+    "Ewald",
+    "Coulomb"
+   ],
+   "noise": [],
+   "source": "OpenAlex 태그 + LES 서론·Grasselli 관점의 절 제목"
+  },
+  {
+   "concept": "전하 평형",
+   "terms": [
+    "charge equilibration",
+    "electronegativity equalization",
+    "fluctuating charge",
+    "QEq"
+   ],
+   "noise": [],
+   "source": "약어·원어(QEq) + 옛 이름(EEM, fluctuating charge: Grasselli §III.1의 고전 문헌)"
+  },
+  {
+   "concept": "기계학습 포텐셜",
+   "terms": [
+    "interatomic potential",
+    "neural network potential",
+    "machine learning potential",
+    "force field"
+   ],
+   "noise": [],
+   "source": "리뷰 용어"
+  },
+  {
+   "concept": "학습 방식(맥락)",
+   "terms": [
+    "machine learning",
+    "neural network",
+    "machine-learned"
+   ],
+   "noise": [],
+   "source": "맥락어"
+  }
+ ],
+ "trends": [
+  {
+   "title": "DFT 전하 라벨에서 에너지·힘만으로",
+   "points": [
+    "3G-HDNNP·4G-HDNNP처럼 DFT 부분전하를 맞추던 방식에서, 에너지·힘만으로 전하를 추론하는 LES로 무게가 옮겨감 (Cheng 2025; Kim·Cheng 2026 원칙 2)",
+    "같은 생각은 CENT(2015)가 QEq로 먼저 시도함 (Grasselli 2026 §III.1)"
+   ]
+  },
+  {
+   "title": "방법에서 도구로",
+   "points": [
+    "LES가 MACE, NequIP, Allegro, CHGNet 등에 붙는 독립 라이브러리가 됨 (Kim 2025)",
+    "2026년 비교 연구들이 MACE-LES를 대표 장거리 모델로 비교에 넣음"
+   ]
+  },
+  {
+   "title": "국소 전하의 한계를 인정하고 자기일관성을 다시 넣음",
+   "points": [
+    "국소 잠재 전하의 성공은 통계적 비국소성이라는 비판 (Grasselli 2026 §II.2)",
+    "다중 결함·금속-물 계면에서는 자기일관 모델이 필요함을 보임 (Baldwin 2026 §VIII)"
+   ]
+  },
+  {
+   "title": "범용 모델 규모로",
+   "points": [
+    "분극 QEq 범용 모델(Gao 2025), 분자용 정전기 범용 모델 MACE-POLAR-1(2026)",
+    "범용 MLIP에서 잠재 정전기를 증류하는 시도 (2026 arXiv)"
+   ]
+  }
+ ],
+ "one_line": "장거리 정전기 학습은 DFT가 정한 전하를 흉내 내는 단계에서, 에너지·힘을 가장 잘 설명하는 잠재 전하를 추론하는 단계(LES)로 넘어왔고, 지금은 그 국소성의 한계를 분극·자기일관성으로 보완하는 쪽으로 가고 있습니다."
+}

@@ -242,6 +242,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_domain.add_argument("domain", help="Domain to add (e.g. publisher.com).")
 
+    # Dispatched before argparse in main(); registered here so it shows in --help.
+    subcommands.add_parser(
+        "lineage",
+        help="Research lineage tools (seed, collect, analyze, query-test, page, report-section, ...).",
+        add_help=False,
+    )
+
     return parser
 
 
@@ -445,6 +452,12 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["lineage"]:
+        # lineage subcommands own their argparse and print human-readable output
+        from scholarly_access_agent.lineage.cli import main as lineage_main
+
+        return lineage_main(argv[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

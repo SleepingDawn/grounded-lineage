@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "SNU-library-scholarly-access"
-version = "0.4.2"
+version = "0.5.0"
 description = "SNU Library scholarly access tool"
 requires-python = ">=3.10"
-dependencies = ["playwright==1.65.2", "pypdf==7.1.0", "fonttools==4.68.0", "mcp==1.30.0", "reportlab==4.4.4", "markdown-it-py==4.0.0"]
+dependencies = ["playwright==1.65.2", "pypdf==7.1.0", "fonttools==4.68.0", "mcp==1.30.0", "reportlab==4.4.4", "markdown-it-py==4.0.0", "networkx==3.4.2"]
 
 [project.scripts]
 scholarly-access-agent = "scholarly_access_agent.cli:main"
@@ -16,7 +16,7 @@ scholarly-access-agent = "scholarly_access_agent.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-scholarly_access_agent = ["data/*.json"]
+scholarly_access_agent = ["data/*.json", "lineage/assets/*"]
 
 [project.optional-dependencies]
 dev = ["PyYAML==6.0.3"]
@@ -24,3 +24,6 @@ dev = ["PyYAML==6.0.3"]
 [tool.setuptools.data-files]
 "share/snu-research-agent/snu-library-scholarly-access" = ["skills/snu-library-scholarly-access/SKILL.md"]
 "share/snu-research-agent/snu-library-scholarly-access/references" = ["skills/snu-library-scholarly-access/references/*.md"]
+"share/snu-research-agent/research-lineage" = ["skills/research-lineage/SKILL.md"]
+"share/snu-research-agent/research-lineage/references" = ["skills/research-lineage/references/*.md"]
+"share/snu-research-agent/research-lineage/examples/les" = ["skills/research-lineage/examples/les/*.json"]
