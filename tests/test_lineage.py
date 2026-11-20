@@ -177,7 +177,8 @@ class PageAndReportTests(unittest.TestCase):
         doc.write_text("# Doc\n\n2026-11-20 · test\n\n" + md, encoding="utf-8")
         result = render_report(doc)
         self.assertTrue(result["ok"], result)
-        self.assertEqual(result["warnings"], [])
+        # CI runners may lack a Korean font (no_korean_font); only rendering problems count here
+        self.assertEqual([w for w in result["warnings"] if not w.startswith("no_korean_font")], [])
 
 
 class CliTests(unittest.TestCase):
