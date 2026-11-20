@@ -17,6 +17,12 @@ class SessionProbeTests(unittest.TestCase):
         self.assertIs(probe["session_valid"], False)
         self.assertIn("sign in again", probe["advice"])
 
+    def test_bare_http_403_is_inconclusive_bot_check_or_expiry(self):
+        probe = probe_session(URL, fetch=lambda u: {"ok": False, "status": "login_required",
+                                                     "message": "HTTP 403 suggests login or access approval is required."})
+        self.assertIsNone(probe["session_valid"])
+        self.assertIn("Cloudflare", probe["advice"])
+
     def test_served_pdf_means_valid_session(self):
         self.assertIs(probe_session(URL, fetch=fake("downloaded"))["session_valid"], True)
 

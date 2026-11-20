@@ -6,6 +6,10 @@ from scholarly_access_agent.runtime.browser import DEFAULT_PROFILE_DIR
 RENEW_ADVICE = ("SNU session expired or missing: ask the user to sign in again (scripts/서울대 로그인.command or "
                 "`scholarly-access-agent open-url <ARTICLE_URL> --wait-for-login --headless false`) before "
                 "dispatching reading batches, or subscription papers will end at the abstract.")
+BLOCKED_ADVICE = ("Publisher answered HTTP 403: either the SNU session expired or the publisher's bot protection "
+                  "(ScienceDirect's Cloudflare check) blocks automated downloads. Renewing the login does not "
+                  "help against the latter; use the open-copy fallbacks in publisher-routes.md (HAL / author "
+                  "manuscript, arXiv) and probe another subscription publisher to test the session itself.")
 
 
 def probe_session(url: str, fetch=None) -> dict:
@@ -27,7 +31,11 @@ def probe_session(url: str, fetch=None) -> dict:
     # the temporary folder (and any probe PDF) is gone here
     status = data.get("status")
     probe = {"probe_url": url, "status": status, "kept_files": False}
-    if status == "login_required":
+    if status == "login_required" and "403" in str(data.get("message", "")):
+        # The downloader infers login_required from a bare HTTP 403. On ScienceDirect that 403 also
+        # comes from its Cloudflare bot check (observed 2026-11-20), so the session may be fine.
+        probe.update(session_valid=None, advice=BLOCKED_ADVICE)
+    elif status == "login_required":
         probe.update(session_valid=False, advice=RENEW_ADVICE)
     elif status == "downloaded":
         probe.update(session_valid=True, advice="Session serves subscription PDFs; dispatch reading batches.")
