@@ -921,6 +921,11 @@ def _derive_for_url(page_url: str) -> list[PdfCandidate]:
         match = re.search(r"/pii/([A-Z0-9]+)", path, flags=re.IGNORECASE)
         if match:
             out.append(f"{origin}/science/article/pii/{match.group(1)}/pdfft?isDTMRedir=true")
+    elif "journals.aps.org" in host:
+        # APS article pages build the PDF link client-side; /<journal>/pdf/<DOI> serves the bytes.
+        match = re.match(r"/([a-z]+)/(?:abstract|article|full)/(10\.\d{4,}/.+?)/?$", path, flags=re.IGNORECASE)
+        if match:
+            out.append(f"{origin}/{match.group(1)}/pdf/{match.group(2)}")
     elif "ieee" in host:
         match = re.search(r"/document/(\d+)", path)
         if match:

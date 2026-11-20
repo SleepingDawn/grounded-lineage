@@ -18,7 +18,7 @@ import json
 import sys
 from pathlib import Path
 
-from .page import Links, lane_name, load, parse_desc, svg, validate
+from .page import Links, lane_name, load, parse_desc, svg, validate, warnings
 
 STATUS = {"fulltext": "본문 확인", "abstract": "초록만 확인", "metadata": "미확인"}
 VERSION = {"journal": "저널", "proceedings": "학회", "preprint": "프리프린트", "unknown": ""}
@@ -182,6 +182,8 @@ def main(argv=None) -> int:
     if errs:
         print("lineage.json problems:\n  - " + "\n  - ".join(errs), file=sys.stderr)
         return 1
+    for w in warnings(L):  # the figure is the same drawing as the page: same layout warnings
+        print("warning:", w, file=sys.stderr)
     data = work / L["meta"].get("data_dir", "data")
     links = Links(load(data / "links.json", {}), L.get("link_overrides"))
     rdir.mkdir(parents=True, exist_ok=True)

@@ -58,7 +58,8 @@ def validate(L):
         for k, limit in (("title", BOX_W - 8), ("sub", BOX_W - 6)):
             w = text_px(n.get(k, ""), 12 if k == "title" else 10.5)
             if w > limit:
-                errs.append(f"node {n.get('id')}: {k} '{n.get(k)}' is ~{w:.0f}px wide, box fits {limit}px; shorten it")
+                errs.append(f"node {n.get('id')}: {k} '{n.get(k)}' is ~{w:.0f}px wide, box fits {limit}px; shorten it "
+                            f"({width_budget(k)})")
     if len(L["nodes"]) > 50:
         errs.append(f"{len(L['nodes'])} nodes; keep the tree at 20-40 (hard limit 50)")
     for e in L["edges"]:
@@ -70,6 +71,16 @@ def validate(L):
         if r.get("lane") is not None and not (0 <= r["lane"] < nl):
             errs.append(f"row '{r.get('work')}': lane {r['lane']} out of range (use null for reviews/perspectives)")
     return errs
+
+
+TEXT_SIZE = {"title": 12, "sub": 10.5}
+
+
+def width_budget(field):
+    """Human-readable box budget, e.g. 'title: about 9 Hangul or 15 Latin characters'."""
+    limit = BOX_W - (8 if field == "title" else 6)
+    size = TEXT_SIZE[field]
+    return f"{field}: about {int(limit // size)} Hangul or {int(limit // (size * 0.6))} Latin characters"
 
 
 def text_px(t, size):
@@ -96,6 +107,20 @@ def warnings(L):
         yt = next(n["year"] for n in L["nodes"] if n["id"] == t)
         if ys > yt:
             w.append(f"edge {s}->{t} goes backward in time ({ys}>{yt}); edges run from the earlier work to the one that builds on it")
+    crossings = edges_through_boxes(L)
+    # A bold main-path arrow through a box reads as "the main path runs through this paper": flag each.
+    # Thin s/d lines crossing boxes are normal in a dense tree; report only their count.
+    main = defaultdict(list)
+    for s, t, st, via in crossings:
+        if st == "m":
+            main[(s, t)].append(via)
+    for (s, t), vias in main.items():
+        w.append(f"main-path edge {s}->{t} is drawn through {', '.join(repr(v) for v in vias)}, so it reads as if "
+                 "the main path ran through that paper: reorder nodes of the same year (list order sets the "
+                 "stacking), or drop the edge and name the segment in evidence.main_path_note")
+    thin = {(s, t) for s, t, st, _ in crossings if st != "m"}
+    if thin:
+        w.append(f"{len(thin)} thin s/d edge(s) cross another box (usually harmless; look at the figure once)")
     return w
 
 
@@ -133,6 +158,49 @@ def layout(nodes):
     return pos, rows, y + 10
 
 
+def edge_curve(pos, s, t):
+    """Cubic Bézier (start, control 1, control 2, end) of the edge s -> t, as drawn."""
+    (sx, sy), (tx, ty) = pos[s], pos[t]
+    if ty > sy:
+        x1, y1, x2, y2 = sx, sy + BOX_H, tx, ty
+        dy = max(24, (y2 - y1) * 0.5)
+        return (x1, y1), (x1, y1 + dy), (x2, y2 - dy), (x2, y2)
+    if abs(tx - sx) < 1:
+        x1 = sx + BOX_W / 2
+        y1, y2 = sy + BOX_H / 2, ty + BOX_H / 2
+        return (x1, y1), (x1 + 16, y1), (x1 + 16, y2), (x1, y2)
+    left = tx < sx
+    x1 = sx - BOX_W / 2 if left else sx + BOX_W / 2
+    x2 = tx + BOX_W / 2 if left else tx - BOX_W / 2
+    y1, y2 = sy + BOX_H / 2, ty + BOX_H / 2
+    xm = (x1 + x2) / 2
+    return (x1, y1), (xm, y1), (xm, y2), (x2, y2)
+
+
+def edges_through_boxes(L, samples=40, margin=3):
+    """Edges whose drawn curve crosses a third node's box (reads as if it went through that paper)."""
+    pos, _, _ = layout(L["nodes"])
+    hits = []
+    for s, t, st in L["edges"]:
+        if s not in pos or t not in pos:
+            continue
+        p0, c1, c2, p3 = edge_curve(pos, s, t)
+        pts = []
+        for k in range(1, samples):
+            u = k / samples
+            a, b, c, e = (1 - u) ** 3, 3 * (1 - u) ** 2 * u, 3 * (1 - u) * u ** 2, u ** 3
+            pts.append((a * p0[0] + b * c1[0] + c * c2[0] + e * p3[0],
+                        a * p0[1] + b * c1[1] + c * c2[1] + e * p3[1]))
+        for n in L["nodes"]:
+            if n["id"] in (s, t):
+                continue
+            cx, y = pos[n["id"]]
+            x0, x1, y0, y1 = cx - BOX_W / 2 + margin, cx + BOX_W / 2 - margin, y + margin, y + BOX_H - margin
+            if any(x0 < px < x1 and y0 < py < y1 for px, py in pts):
+                hits.append((s, t, st, n["id"]))
+    return hits
+
+
 def svg(L, links):
     lanes, nodes, edges = L["lanes"], L["nodes"], L["edges"]
     pos, rows, H = layout(nodes)
@@ -159,21 +227,8 @@ def svg(L, links):
         yr, y, h = r
         o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="sep"/><text x="8" y="{y+28}" class="yr">{yr}</text>')
     for s, t, st in edges:
-        (sx, sy), (tx, ty) = pos[s], pos[t]
-        if ty > sy:
-            x1, y1, x2, y2 = sx, sy + BOX_H, tx, ty
-            dy = max(24, (y2 - y1) * 0.5)
-            d = f"M{x1},{y1} C{x1},{y1+dy} {x2},{y2-dy} {x2},{y2}"
-        elif abs(tx - sx) < 1:
-            x1 = sx + BOX_W / 2
-            y1, y2 = sy + BOX_H / 2, ty + BOX_H / 2
-            d = f"M{x1},{y1} C{x1+16},{y1} {x1+16},{y2} {x1},{y2}"
-        else:
-            left = tx < sx
-            x1 = sx - BOX_W / 2 if left else sx + BOX_W / 2
-            x2 = tx + BOX_W / 2 if left else tx - BOX_W / 2
-            y1, y2 = sy + BOX_H / 2, ty + BOX_H / 2
-            d = f"M{x1},{y1} C{(x1+x2)/2},{y1} {(x1+x2)/2},{y2} {x2},{y2}"
+        p0, c1, c2, p3 = edge_curve(pos, s, t)
+        d = f"M{p0[0]},{p0[1]} C{c1[0]},{c1[1]} {c2[0]},{c2[1]} {p3[0]},{p3[1]}"
         cls = {"s": "e", "d": "e dash", "m": "e main"}[st]
         o.append(f'<path d="{d}" class="{cls}" data-s="{s}" data-t="{t}" marker-end="url(#{"arm" if st == "m" else "ar"})"/>')
     for n in nodes:

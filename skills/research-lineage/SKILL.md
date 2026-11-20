@@ -25,14 +25,24 @@ Citation data finds candidates; reading decides the lineage. `scholarly-access-a
 |---|------|-----|----|
 | 1 | Seed | Agent (ask the user only if two readings of the topic are plausible) | `lineage seed "<title words or DOI>"`. Pick the paper that defined the concept, journal record first. 1–3 seeds. |
 | 2 | Collect | Script | `lineage init <Topic>`, then in that folder `lineage collect data <SEED...>` |
-| 3 | Analyze | Script → Agent | `lineage analyze data`; read `data/analysis.txt` and interpret it (below). Start the branch-candidate log. |
+| 3 | Analyze | Script → Agent | `lineage analyze data` (saves `data/analysis.txt` itself; no need to capture stdout); read it and interpret it (below). Start the branch-candidate log. |
 | 4 | Read, pass 1 | Agent | The seed and two reviews from different camps (reading plan below). Collect their vocabulary as you read. |
-| 5 | Vocabulary and widening | Agent → Script | Build concept blocks, test them with `lineage query-test`, widen with the queries that pass (below). Skipped: say why in `meta.expansion_note`. |
+| 5 | Vocabulary and widening | Agent → Script | Build concept blocks, test them all in one batch `lineage query-test` call, widen with the queries that pass (below). Skipped: say why in `meta.expansion_note`. |
 | 6 | Read, pass 2 | Agent | Founders of uncovered lanes, both sides of contested claims, important papers that widening surfaced. |
-| 7 | Curate | Agent | Consolidate the branches and write `lineage.json`, including the text flow (`trends`, `one_line`, lane `how`/`limit`). Back verdict points with `lineage mentions data "<regex>" --list`. |
+| 7 | Curate | Agent | Consolidate the branches and write `lineage.json`, including the text flow (`trends`, `one_line`, lane `how`/`limit`). Back verdict points with `lineage mentions data "<regex>" --list`. After every edit run `lineage check .` (validation and layout warnings, including edges drawn through another box; no rendering). Keep node titles within the budget it prints. |
 | 8 | Links | Script → Agent | `lineage links data/links.json --from-lineage lineage.json`. For a `[preprint]` result with a venue version OpenAlex lacks (conference proceedings), verify the URL and add it under `link_overrides`. |
-| 9 | Deliver | Script → Agent | Report chapter: `lineage report-section <topic folder> --chapter <n>` writes `lineage_section.md` and `figs/lineage.png` there; put the chapter into the topic's `README.md` report and render it with snu-library-scholarly-access (`report-pdf.md`). Interactive page: `lineage page .` writes `<slug>.html`; publish it (Artifact tool when available) or hand over the path. Both validate `lineage.json`; fix every problem and warning first. Look once at `figs/lineage.png`, at one PDF page of the chapter, and at the page (serve its folder with `python -m http.server` when `file://` is refused). |
+| 9 | Deliver | Script → Agent | Report chapter: `lineage report-section <topic folder> --chapter <n>` writes `lineage_section.md` and `figs/lineage.png` there; put the chapter into the topic's `README.md` report and render it with snu-library-scholarly-access (`report-pdf.md`). Interactive page: `lineage page .` writes `<slug>.html`; publish it (Artifact tool when available) or hand over the path. Both validate `lineage.json`; fix every problem and warning with `lineage check` first, then render each output once. Look once at `figs/lineage.png`, at one PDF page of the chapter, and at the page (serve its folder with `python -m http.server` when `file://` is refused). |
 | 10 | File in ReadCube | Agent | When the `readcube` tools are available, file every node, row and read paper in the list `snu-research-agent/<Topic>`, following snu-library-scholarly-access `references/readcube.md`. Fix box labels that ReadCube metadata shows to be wrong. |
+
+### Keeping it fast without lowering the evidence bar
+
+Most wall-clock time is waiting, not reading. Overlap the steps; never cut the reading plan below.
+
+1. **Preflight before reading.** Run the session preflight in snu-library-scholarly-access `publisher-routes.md` (one paywalled ScienceDirect download). Ask for an SNU login renewal at once if it fails. An expired session silently downgrades every Elsevier paper to "abstract only".
+2. **Find the lanes early.** While `lineage collect` runs, do 2–3 native searches that combine the topic with each method family you can think of (first-principles/ab initio, machine-learned potential, lattice dynamics, …). Then pass 1 and pass 2 readers can start together. A lane found only after widening means one more serial reading batch.
+3. **Dispatch all reading batches at once,** each with the route for every paper from `publisher-routes.md`, the extraction criteria and the evidence-record shape. Run query tests and widening while they read.
+4. **Draft `lineage.json` while the readers work:** lanes, node ids, edges and axes from abstracts and the analysis. Fill levels, numbers and evidence locators when the records arrive. Read the `lineage init` skeleton before writing it; write the file once, then fix it with small edits and `lineage check`.
+5. **Render once at the end:** page, figure, report PDF.
 
 When the user asks only for the diagram, skip the report chapter. When the user asks for a review or a written summary of the flow, the report chapter is the main deliverable and the page is its companion.
 
@@ -49,7 +59,7 @@ The report's method section names both search routes: the native searches logged
 The seed's neighbourhood uses the seed camp's words; missing branches live under other names (older terms, other fields, abbreviations). Build the vocabulary from the reviews read in step 4 as well as from tags, test it, then widen. Full procedure: `references/search-vocabulary.md`. In short:
 
 - Concept blocks: synonyms OR-ed inside a block, 2–3 blocks AND-ed, off-topic senses NOT-ed. Record them in `vocabulary` with where each term came from.
-- Test every query with `lineage query-test data '<query>' --gold-from-lineage lineage.json --label '<name>'`: precision is citation-anchored field fit (target ≥ ~60%), recall is checked against a gold set of key papers, novelty under 10% means saturated.
+- Test the queries in one batch, `lineage query-test data '<q1>' '<q2>' ... --label '<n1>' --label '<n2>' ... --gold-from-lineage lineage.json`. The queries are fetched in parallel and logged in order, and a summary table follows. Precision is citation-anchored field fit (target ≥ ~60%), recall is checked against a gold set of key papers, novelty under 10% means saturated.
 - Stop at ~80% strategy recall with a saturated last query, or ~6 queries. Widen with `lineage collect data_x <SEED> --base data --query '<q>' ...`, then `lineage analyze data_x 2`.
 
 ## Reading plan (steps 4 and 6)

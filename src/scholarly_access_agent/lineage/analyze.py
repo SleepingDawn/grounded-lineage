@@ -6,6 +6,8 @@
 4. Branches: bibliographic-coupling network of forward papers -> Louvain clusters.
 5. Main path: SPC (search path count) weights on the citation DAG -> global main path.
 
+Writes DATA_DIR/analysis.json and the readable report DATA_DIR/analysis.txt (also printed).
+
 Usage: lineage analyze DATA_DIR [MIN_REF]
   MIN_REF (default 1): only fetch metadata for references cited by >= MIN_REF field papers.
   Use 2-3 for expanded corpora to save OpenAlex quota; RPYS then reflects shared references only.
@@ -181,25 +183,29 @@ def main(argv=None):
     }
     (d / "analysis.json").write_text(json.dumps(res, indent=1, ensure_ascii=False), encoding="utf-8")
 
-    print("== RPYS peaks (year, n_refs, deviation, top refs) ==")
+    text = report_text(res)
+    # The report is always saved: a piped or truncated console must not force a rerun.
+    (d / "analysis.txt").write_text(text, encoding="utf-8")
+    print(text, end="")
+    print(f"\nwrote {d / 'analysis.txt'} and {d / 'analysis.json'}")
+
+
+def report_text(res):
+    out = ["== RPYS peaks (year, n_refs, deviation, top refs) =="]
     for y, n, dev, tops in res["rpys_peaks"]:
-        print(y, n, dev)
-        for t in tops:
-            print("    ", t)
-    print("\n== Core ancestors (times cited by field) ==")
-    for n, s in res["core_ancestors"]:
-        print(f"{n:4d}  {s}")
-    print("\n== Clusters ==")
-    for c in clusters:
-        print(f"\n[C{c['cluster']}] size={c['size']} years={c['years']} median={c['median_year']}")
-        print("  words:", ", ".join(c["words"]))
-        for m in c["top_members"]:
-            print("   *", m)
-        print("  refs:")
-        for r in c["top_refs"]:
-            print("   -", r)
-    print("\n== Main path ==")
-    for s in res["main_path"]:
-        print("  ->", s)
-    print("\n== forward by year ==", dict(sorted(res["forward_by_year"].items())))
+        out.append(f"{y} {n} {dev}")
+        out += [f"     {t}" for t in tops]
+    out += ["", "== Core ancestors (times cited by field) =="]
+    out += [f"{n:4d}  {s}" for n, s in res["core_ancestors"]]
+    out += ["", "== Clusters =="]
+    for c in res["clusters"]:
+        out += ["", f"[C{c['cluster']}] size={c['size']} years={c['years']} median={c['median_year']}",
+                "  words: " + ", ".join(c["words"])]
+        out += [f"   * {m}" for m in c["top_members"]]
+        out.append("  refs:")
+        out += [f"   - {r}" for r in c["top_refs"]]
+    out += ["", "== Main path =="]
+    out += [f"  -> {s}" for s in res["main_path"]]
+    out += ["", f"== forward by year == {dict(sorted(res['forward_by_year'].items()))}"]
+    return "\n".join(out) + "\n"
 

@@ -94,6 +94,9 @@ class AnalysisTests(unittest.TestCase):
                 with quiet():
                     analyze.main([str(d)])
             res = json.loads((d / "analysis.json").read_text(encoding="utf-8"))
+            text = (d / "analysis.txt").read_text(encoding="utf-8")  # saved even when stdout is piped away
+            for heading in ("== RPYS peaks", "== Core ancestors", "== Clusters ==", "== Main path ==", "== forward by year"):
+                self.assertIn(heading, text)
             self.assertTrue(res["main_path"])
             self.assertIn("rpys_peaks", res)
             self.assertEqual(res["forward_by_year"], {"2025": 3, "2026": 3})
@@ -128,6 +131,41 @@ class QueryTestTests(unittest.TestCase):
             self.assertEqual((log[0]["gold"], log[0]["gold_found"]), (2, 1))
             self.assertFalse(log[0]["saturated"])
 
+    def test_batch_runs_queries_in_parallel_and_logs_in_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            synthetic_corpus(d)
+            hits = {"meta": {"count": 2}, "results": [work("N1", 2025, ["A"], "New in-field"),
+                                                      work("F1", 2025, ["A"], "Known")]}
+
+            def fake_get(params):  # order-independent: threads may call in any order
+                if "title_and_abstract.search:q1" in params["filter"]:
+                    return {"results": [{"id": "https://openalex.org/S"}]}
+                if "title_and_abstract.search" in params["filter"]:
+                    return {"results": [{"id": "https://openalex.org/A"}]}
+                return {"results": []}
+
+            out = io.StringIO()
+            with mock.patch.object(query_test, "search", return_value=hits), \
+                    mock.patch.object(query_test, "get", side_effect=fake_get), \
+                    contextlib.redirect_stdout(out):
+                query_test.main([str(d), "q1 AND x", "q2 AND y", "--gold", "S,A",
+                                 "--label", "first", "--label", "second", "--list", "0", "--workers", "2"])
+            log = json.loads((d / "queries.json").read_text(encoding="utf-8"))
+            self.assertEqual([e["label"] for e in log], ["first", "second"])
+            self.assertEqual([e["gold_found_ids"] for e in log], [["S"], ["A"]])
+            text = out.getvalue()
+            self.assertIn("== batch summary ==", text)
+            self.assertIn("strategy recall (all logged queries + this one): 2/2 (100%)", text)  # accumulates
+
+    def test_batch_rejects_bad_query_before_any_network_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            synthetic_corpus(d)
+            with mock.patch.object(query_test, "search", side_effect=AssertionError("network used")):
+                with self.assertRaises(ValueError):
+                    query_test.main([str(d), "good AND query", '"a" OR b, c'])
+
 
 class PageAndReportTests(unittest.TestCase):
     def setUp(self):
@@ -151,7 +189,39 @@ class PageAndReportTests(unittest.TestCase):
         self.assertTrue(any("wide" in e for e in errs))
         self.assertTrue(any("bad edge" in e for e in errs))
         self.assertTrue(any("out of range" in e for e in errs))
+        self.assertTrue(any("Hangul or" in e for e in errs))  # tells the budget, not just the overflow
         self.assertEqual(page.validate(LINEAGE), [])
+
+    def test_check_warns_when_an_edge_is_drawn_through_another_box(self):
+        L = json.loads(json.dumps(LINEAGE))
+        # all four papers in one lane: the added edge a -> f runs straight down through b and s
+        for n in L["nodes"]:
+            n["lane"] = 0
+        L["edges"].append(["a", "f", "m"])
+        hits = page.edges_through_boxes(L)
+        self.assertIn(("a", "f", "m", "b"), hits)
+        self.assertFalse([h for h in hits if h[:2] == ("a", "b")])  # adjacent nodes: nothing in between
+        self.assertTrue(any(w.startswith("main-path edge a->f is drawn through 'b', 's'") for w in page.warnings(L)))
+        # the same crossing by a thin edge is only counted, not listed
+        L["edges"][-1] = ["a", "f", "d"]
+        ws = page.warnings(L)
+        self.assertFalse(any(w.startswith("main-path edge") for w in ws))
+        self.assertIn("1 thin s/d edge(s) cross another box (usually harmless; look at the figure once)", ws)
+        self.assertEqual(page.edges_through_boxes(LINEAGE), [])
+
+    def test_check_command_exit_codes(self):
+        from scholarly_access_agent.lineage import check
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(check.main([str(self.root)]), 0)
+        self.assertIn("box budget: title: about", out.getvalue())
+        bad = json.loads(json.dumps(LINEAGE))
+        bad["edges"].append(["a", "zz", "s"])
+        (self.root / "lineage.json").write_text(json.dumps(bad, ensure_ascii=False), encoding="utf-8")
+        with quiet():
+            self.assertEqual(check.main([str(self.root)]), 1)
+            self.assertEqual(lineage_main(["check", str(self.root)]), 1)  # dispatched through the CLI
 
     def test_page_links_boxes_and_uses_shared_evidence_labels(self):
         with quiet():

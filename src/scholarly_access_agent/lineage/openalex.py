@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -54,12 +55,27 @@ def _request(params: dict, timeout: int = 60) -> tuple[int, dict, dict]:
         return exc.code, dict(exc.headers or {}), {}
 
 
+_THROTTLE = threading.Lock()
+_last_start = [0.0]
+MIN_INTERVAL = 0.11  # seconds between request starts across threads (~9 requests/s)
+
+
+def _throttle(sleep) -> None:
+    """Space request starts so parallel callers (query-test batches) stay under the rate limit."""
+    with _THROTTLE:
+        wait = MIN_INTERVAL - (time.monotonic() - _last_start[0])
+        if wait > 0:
+            sleep(wait)
+        _last_start[0] = time.monotonic()
+
+
 def get(params: dict, tries: int = 8, sleep=time.sleep) -> dict:
     key = api_key()
     if key:
         params = {**params, "api_key": key}
     status = None
     for i in range(tries):
+        _throttle(sleep)
         try:
             status, headers, body = _request(params)
         except (URLError, TimeoutError, OSError):

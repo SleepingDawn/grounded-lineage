@@ -17,6 +17,7 @@ COMMANDS = {
     "query-test": ("query_test", "Test a boolean query: precision, recall on gold, novelty; logs it."),
     "mentions": ("mentions", "Count corpus papers matching a pattern, by year (offline)."),
     "links": ("links", "Resolve journal-first links for OpenAlex IDs or a lineage.json."),
+    "check": ("check", "Validate lineage.json and report layout warnings, without rendering."),
     "page": ("page", "Validate lineage.json and render the interactive lineage page."),
     "report-section": ("report", "Write the lineage chapter (Markdown + PNG figure) for a PDF report."),
 }
