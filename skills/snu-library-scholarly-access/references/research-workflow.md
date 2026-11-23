@@ -30,18 +30,7 @@ When the Tier 2–3 list exceeds about 15 papers, split it into batches of 4–6
 ## Models and reasoning effort
 Sub-agent judgments (is this a method the study used, which version was read) become report evidence, and the main agent re-checks only a few numbers, so readers run as strong as the main agent.
 
-Pick each agent's row by what its output becomes: a judgment that enters the report as evidence gets the strong row; mechanical work whose output the main agent checks gets the cheaper one.
-
-| Role | Claude Code | Codex | Effort: Default / Deep |
-| --- | --- | --- | --- |
-| Main agent (plan, screen, resolve versions, synthesize) | Opus | the session model | `high` / `xhigh` |
-| Reading sub-agents (Tier 2–3) | Agent tool `model: "opus"`, `effort: "high"` | `spawn_agent` with `reasoning_effort: "high"`, no model override | `high` / `high` |
-| Locating sub-agents (find candidates, resolve DOIs, find open copies, fetch pages; no inclusion or evidence judgments) | Agent tool `model: "sonnet"`, `effort: "medium"` | `spawn_agent` with `reasoning_effort: "medium"`, no model override | `medium` / `medium` |
-
-- Pass the sub-agent values explicitly at every spawn; never rely on the client default or the parent's model. Never use small fast models (Haiku, `*-luna` and similar) for Tier 2–3 reading or any inclusion judgment.
-- Use Fable (or another model above Opus) for an agent only when the user asks for it.
-- The main agent cannot change its own model or effort. If the session runs on a different row than its own — below it (for example Deep on `medium`) or above it (for example Fable, which costs more for the same workflow) — say so once at the start, with the recommended setting, and continue.
-- Outside Claude Code (for example claude.ai chat) there is no per-agent model setting: everything runs on the chat's model, so say so once at the start when that model is above Opus.
+Every agent's model and effort come from [research-models.md](research-models.md): the main agent is `main`, Tier 2–3 readers are `reader` (opus, `high`), and agents that only find candidates, resolve DOIs, find open copies or fetch pages are `locator` (sonnet, `medium`). Pass the row explicitly at every spawn.
 
 ## Searching and stopping
 Search question variants and competing results. For trends use current-year/preprint coverage alongside recent peer-reviewed evidence. Screen titles/abstracts, then inspect the shortlist's main Methods/Results and relevant supplements. Record what was actually read. Term results are locators, not a quality score.

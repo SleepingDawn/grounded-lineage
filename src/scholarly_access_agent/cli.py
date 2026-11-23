@@ -254,6 +254,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Research lineage tools (seed, collect, analyze, query-test, page, report-section, ...).",
         add_help=False,
     )
+    subcommands.add_parser(
+        "cost",
+        help="Research-run token estimates, spend ledger and calibration (estimate, record, report).",
+        add_help=False,
+    )
 
     return parser
 
@@ -464,6 +469,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from scholarly_access_agent.lineage.cli import main as lineage_main
 
         return lineage_main(argv[1:])
+    if argv[:1] == ["cost"]:
+        from scholarly_access_agent.cost import main as cost_main
+
+        return cost_main(argv[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

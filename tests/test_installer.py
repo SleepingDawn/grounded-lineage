@@ -15,6 +15,28 @@ class InstallTests(unittest.TestCase):
             # SKILL + every reference shipped in the repo + the generated local-runtime hint
             self.assertEqual(len(list(target.rglob('*.md'))), 1 + len(references) + 1)
 
+    def test_installs_topic_scout_and_pilot_skills(self):
+        from scholarly_access_agent.installer import SKILLS, SKILLS_DIR
+        self.assertIn('research-topic-scout', SKILLS)
+        self.assertIn('research-pilot', SKILLS)
+        with tempfile.TemporaryDirectory() as root:
+            scout = Path(root) / 'research-topic-scout'
+            install(scout, Path('/opt/test/bin/scholarly-access-agent'), SKILLS_DIR / 'research-topic-scout')
+            self.assertTrue((scout / 'references/novelty-check.md').is_file())
+            self.assertTrue((scout / 'references/question-card.md').is_file())
+            pilot = Path(root) / 'research-pilot'
+            install(pilot, Path('/opt/test/bin/scholarly-access-agent'), SKILLS_DIR / 'research-pilot')
+            for rel in ('worker.md', 'playbooks/status.md', 'playbooks/topics.md', 'references/cost.md'):
+                self.assertTrue((pilot / rel).is_file(), rel)
+
+    def test_skill_links_resolve(self):
+        import re
+        from scholarly_access_agent.installer import SKILLS, SKILLS_DIR
+        for name in SKILLS:
+            for md in (SKILLS_DIR / name).rglob('*.md'):
+                for target in re.findall(r'\]\(((?!https?:)[^)#\s]+\.md)\)', md.read_text(encoding='utf-8')):
+                    self.assertTrue((md.parent / target).is_file(), f'{md}: {target}')
+
     def test_installs_research_lineage_skill(self):
         from scholarly_access_agent.installer import SKILLS_DIR
         with tempfile.TemporaryDirectory() as root:

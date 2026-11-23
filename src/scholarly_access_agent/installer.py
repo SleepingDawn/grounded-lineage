@@ -6,7 +6,7 @@ import sys
 
 import sysconfig
 
-SKILLS = ("snu-library-scholarly-access", "research-lineage")
+SKILLS = ("snu-library-scholarly-access", "research-lineage", "research-topic-scout", "research-pilot")
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS_DIR = ROOT / "skills"
 if not (SKILLS_DIR / SKILLS[0]).is_dir():
