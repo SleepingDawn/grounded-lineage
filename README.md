@@ -44,6 +44,10 @@ A second skill, `skills/research-lineage/SKILL.md`, traces where a concept came 
 
 Evidence records carry `venue_type` (journal, conference paper or abstract, thesis, preprint, report), `indexing` and `evidence_role`; summaries and verdicts rest on peer-reviewed, full-text items, and conference abstracts, preprints and abstract-only items are shown as 예비 근거. Korean-setting questions add a KCI/RISS/DBpia route. `scholarly-access-agent refs check <evidence folder>` compares every record with Crossref by DOI (title, year, first author, venue, item type → suggested `venue_type`) and lists records without a DOI for a manual KCI/RISS check; only DOIs are sent.
 
+## Traceable claims
+
+Evidence records store every reportable number in `results` (value, range, unit, condition, page) and, when a local PDF was read, its `source_file`. Reports cite with keys — `[@larkin2014, p.9]`, `[@liang2023#k350]` — which `render-report` turns into "(Larkin 외, 2014 [5], p.9)", numbering references by first citation and filling a `<!-- references -->` table with the version read and the derived evidence label. `scholarly-access-agent evidence lint` checks access, locators and novelty verdicts; `evidence labels` derives 본문 확인 / 발췌 확인 / 인용 맥락만 / 초록만 확인 / 미확인; `report trace` flags unknown keys, missing locators, numbers not found in the cited records and uncited numbers in the summary; `evidence verify --write` re-reads each result's PDF page and records `verified_by`.
+
 ## Verify
 
 ```sh

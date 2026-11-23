@@ -630,8 +630,30 @@ def render_report(markdown_path: str | Path, output_path: str | Path | None = No
     """
     result = _render_report(markdown_path, output_path, engine, formats)
     if result.get("ok") and isinstance(result.get("warnings"), list):
+        result["warnings"].extend(_trace_warnings(markdown_path))
         result["warnings"].extend(_evidence_lint_warnings(markdown_path))
     return result
+
+
+def _trace_warnings(markdown_path: str | Path) -> list[str]:
+    try:
+        from scholarly_access_agent.trace import render_warnings
+
+        return render_warnings(markdown_path)
+    except Exception as exc:  # the trace must never break a render
+        return [f"report_trace_failed: {type(exc).__name__}"]
+
+
+def _citation_pass(source: Path) -> tuple[str | None, list[str]]:
+    """(Markdown with citation keys rendered, or None when unchanged; warnings)."""
+    try:
+        from scholarly_access_agent.trace import citation_pass
+
+        text = source.read_text(encoding="utf-8")
+        rendered, warnings = citation_pass(source, text)
+        return (rendered if rendered != text else None), warnings
+    except Exception as exc:  # the citation pass must never break a render
+        return None, [f"citation_pass_failed: {type(exc).__name__}"]
 
 
 def _evidence_lint_warnings(markdown_path: str | Path) -> list[str]:
@@ -668,27 +690,32 @@ def _render_report(markdown_path: str | Path, output_path: str | Path | None = N
     except ReportError as exc:
         return {"ok": False, "status": "invalid_input", "reason": str(exc)}
     notes: list[str] = []
+    text, cite_warnings = _citation_pass(source)
+    extra = {"text": text} if text is not None else {}
     if engine != "reportlab":
         quarto = quarto_report.find_quarto()
         if quarto:
-            return quarto_report.render_with_quarto(source, output, quarto, formats)
+            result = quarto_report.render_with_quarto(source, output, quarto, formats, **extra)
+            if result.get("ok"):
+                result["warnings"] = result["warnings"] + cite_warnings
+            return result
         if engine == "quarto":
             return {"ok": False, "status": "quarto_unavailable",
                     "reason": "Quarto not found: install it (https://quarto.org) or set QUARTO_PATH"}
         if "html" in formats:
             notes.append("quarto_unavailable: the HTML report needs Quarto (https://quarto.org); "
                          "wrote the PDF with the built-in reportlab engine instead")
-    result = _render_reportlab(source, output.with_suffix(".pdf"))
-    result["warnings"] = notes + result["warnings"]
+    result = _render_reportlab(source, output.with_suffix(".pdf"), **extra)
+    result["warnings"] = notes + result["warnings"] + cite_warnings
     return result
 
 
-def _render_reportlab(source: Path, output: Path) -> dict[str, Any]:
+def _render_reportlab(source: Path, output: Path, text: str | None = None) -> dict[str, Any]:
     fonts = Fonts()
     frame_width = PAGE_W - 2 * MARGIN_X
     frame_height = PAGE_H - MARGIN_TOP - MARGIN_BOTTOM
     builder = _Builder(fonts, source.parent, frame_width, frame_height)
-    tokens = _parser().parse(cjk_bold(source.read_text(encoding="utf-8")))
+    tokens = _parser().parse(cjk_bold(source.read_text(encoding="utf-8") if text is None else text))
     story = builder.blocks(tokens, 0, len(tokens))
     title = builder.title or source.stem
 

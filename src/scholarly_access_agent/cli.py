@@ -274,7 +274,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subcommands.add_parser(
         "evidence",
-        help="Lint evidence/novelty records and derive read-depth labels (lint, labels).",
+        help="Lint evidence/novelty records, derive read-depth labels, re-check results on the PDF page "
+             "(lint, labels, verify).",
+        add_help=False,
+    )
+    subcommands.add_parser(
+        "report",
+        help="Trace a report's citation keys and numbers back to evidence records (trace).",
         add_help=False,
     )
 
@@ -499,6 +505,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from scholarly_access_agent.evidence import main as evidence_main
 
         return evidence_main(argv[1:])
+    if argv[:1] == ["report"]:
+        from scholarly_access_agent.trace import main as trace_main
+
+        return trace_main(argv[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

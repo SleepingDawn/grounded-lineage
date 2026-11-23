@@ -256,11 +256,16 @@ def _problems(stderr: str) -> list[str]:
             if re.search(r"\b(warning|error)\b", line, re.I) and "WARN: Unable to resolve" not in line]
 
 
-def render_with_quarto(source: Path, base: Path, quarto: str, formats: tuple[str, ...]) -> dict[str, Any]:
-    """Render Markdown `source` to `base`.html and/or `base`.pdf (resolved paths, any suffix on `base`)."""
+def render_with_quarto(source: Path, base: Path, quarto: str, formats: tuple[str, ...],
+                       text: str | None = None) -> dict[str, Any]:
+    """Render Markdown `source` to `base`.html and/or `base`.pdf (resolved paths, any suffix on `base`).
+
+    `text`, when given, replaces the file's content (citation keys already rendered); images
+    still resolve against the source's folder.
+    """
     from pypdf import PdfReader
 
-    text = source.read_text(encoding="utf-8")
+    text = source.read_text(encoding="utf-8") if text is None else text
     title, subtitle, body = split_front(text)
     title = title or source.stem
     folder = source.parent

@@ -2,12 +2,15 @@
 
   scholarly-access-agent evidence lint <topic folder or evidence folder> [--json]
   scholarly-access-agent evidence labels <topic folder> [--markdown | --json]
+  scholarly-access-agent evidence verify <topic folder> [--record key] [--write] [--json]
 
 How much of a paper was read is stated by the record (`access`, `read_via`, each
 locator's `read_mode`), never by hand in the report. `lint` checks that these fields
 agree with each other and with `version`; it also re-derives novelty verdicts
 (`ideas/novelty/*.json`) from the overlap grades. `labels` prints the Korean label
 (본문 확인 / 발췌 확인 / 인용 맥락만 / 초록만 확인 / 미확인) and a short locator per record.
+`verify` re-reads the local PDF page (`source_file`) behind each structured result and checks
+its value is printed there (local files only, no network).
 Format: skills/snu-library-scholarly-access/references/evidence-format.md.
 """
 from __future__ import annotations
@@ -209,10 +212,55 @@ def lint_record(record: Any, file: str) -> list[dict[str, str]]:
     if (access in FULLTEXT and locs and all(l.get("read_mode") in EXCERPT_MODES for l in locs)):
         warn("fulltext_terms_only", "all locators are read_mode terms/caption: access should be excerpts")
 
+    out.extend(lint_results(record, file))
+
     venue = record.get("venue_type")
     if venue in PRELIMINARY_VENUES or access in PRELIMINARY_ACCESS:
         why = f"venue_type {venue}" if venue in PRELIMINARY_VENUES else f"access {access}"
         out.append(_finding("info", file, "preliminary_evidence", f"예비 근거 only ({why})"))
+    return out
+
+
+def lint_results(record: dict, file: str) -> list[dict[str, str]]:
+    """Structured `results`: quantity, value, unit ("" allowed) and a pdf_page or section each."""
+    out: list[dict[str, str]] = []
+    items = record.get("results")
+    if items is None:
+        return out
+    if not isinstance(items, list):
+        return [_finding("error", file, "results_not_a_list", "results must be a list of objects")]
+    seen: set[str] = set()
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            out.append(_finding("error", file, "result_not_an_object", f"results[{index}] is not an object"))
+            continue
+        name = f"result {item.get('id') or f'#{index}'}"
+        err = lambda rule, msg: out.append(_finding("error", file, rule, f"{name}: {msg}"))  # noqa: E731
+        if not str(item.get("quantity") or "").strip():
+            err("result_missing_quantity", "quantity is missing")
+        value = item.get("value")
+        if value is None or (isinstance(value, str) and not value.strip()):
+            err("result_missing_value", "value is missing")
+        elif isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            err("result_value_invalid", "value must be a number or a string such as \"14-24\"")
+        if not isinstance(item.get("unit"), str):
+            err("result_missing_unit", 'unit is missing (use "" for dimensionless)')
+        if not (_has_page(item) or _has_section(item)):
+            err("result_without_locator", "no pdf_page or section")
+        rid = item.get("id")
+        if rid not in (None, ""):
+            if str(rid) in seen:
+                err("result_duplicate_id", f"id {rid} is used twice")
+            seen.add(str(rid))
+        if item.get("read_mode") not in (None, *READ_MODES):
+            out.append(_finding("warning", file, "read_mode_unknown",
+                                f"{name}: read_mode {item['read_mode']} not one of {', '.join(READ_MODES)}"))
+    if items:
+        label = derive_label(record)["label"]
+        if label not in (LABEL_BODY, LABEL_EXCERPTS):
+            out.append(_finding("warning", file, "results_without_reading",
+                                f"{len(items)} result(s) in a record labelled {label}: numbers need the body "
+                                "or an excerpt read"))
     return out
 
 
@@ -301,6 +349,10 @@ def lint_folder(path: str | Path) -> dict[str, Any]:
             if kind == "evidence":
                 records += 1
                 findings.extend(lint_record(data, name))
+                source = data.get("source_file") if isinstance(data, dict) else None
+                if source and not (topic / str(source)).is_file():
+                    findings.append(_finding("warning", name, "source_file_missing",
+                                             f"source_file {source} not found in the topic folder"))
             else:
                 found, row = lint_novelty(data, name)
                 findings.extend(found)
@@ -330,6 +382,107 @@ def labels_folder(path: str | Path) -> list[dict[str, Any]]:
         rows.append({"file": file.name, "title": _short(data.get("title"), 50), **derive_label(data),
                      "venue_type": data.get("venue_type"), "version": _short(data.get("version"), 40)})
     return rows
+
+
+def _page_text(pdf: Path, pages: list[int], cache: dict[int, str]) -> str:
+    from scholarly_access_agent.runtime.reader import read_pdf
+
+    for page in pages:
+        if page not in cache:
+            result = read_pdf(str(pdf), pages=str(page), max_chars=24000)
+            if not result.get("ok"):
+                raise ValueError(str(result.get("status") or "unreadable PDF"))
+            cache[page] = " ".join(str(p.get("text") or "") for p in result.get("passages") or [])
+    return " ".join(cache[p] for p in pages)
+
+
+def _targets(item: dict, fields: tuple[str, ...]) -> list[tuple[str, float]]:
+    from scholarly_access_agent.trace import _prose, number_tokens
+
+    out = []
+    for field in fields:
+        value = item.get(field)
+        if value is None or isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            out.append((str(value), float(value)))
+        elif field == "summary":  # prose: skip Table/Fig/section numbers
+            out.extend(number_tokens(_prose(str(value))))
+        else:
+            out.extend(number_tokens(str(value), strict=False))
+    return out
+
+
+def verify_folder(path: str | Path, record: str | None = None, write: bool = False,
+                  today: str | None = None) -> dict[str, Any]:
+    """Re-read each result's (and page locator's) PDF page from `source_file`; check its numbers are printed there.
+
+    Local files only. With `write`, each checked result gets
+    verified_by = {"date", "method": "read_pdf p.N", "ok"}.
+    """
+    from datetime import date
+
+    from scholarly_access_agent.trace import _pages, number_tokens, values_match
+
+    topic, evidence, _ = resolve_folders(path)
+    rows: list[dict[str, Any]] = []
+    notes: list[str] = []
+    written: list[str] = []
+    today = today or date.today().isoformat()
+    files = sorted(evidence.glob("*.json")) if evidence else []
+    if record:
+        files = [f for f in files if f.stem == record]
+        if not files:
+            notes.append(f"{record}: no evidence/{record}.json")
+    for file in files:
+        data, problem = _load(file)
+        if problem or not isinstance(data, dict):
+            notes.append(f"{file.stem}: skipped (unreadable record)")
+            continue
+        source = data.get("source_file")
+        if not source:
+            notes.append(f"{file.stem}: skipped (no source_file)")
+            continue
+        pdf = (topic / str(source)).resolve()
+        if not pdf.is_file() or pdf.suffix.lower() != ".pdf":
+            notes.append(f"{file.stem}: skipped (source_file {source} not found)")
+            continue
+        cache: dict[int, str] = {}
+        changed = False
+        checks = [("result", r, ("value", "lo", "hi")) for r in data.get("results") or [] if isinstance(r, dict)]
+        checks += [("locator", l, ("summary",)) for l in locators(data) if _has_page(l)]
+        for kind, item, fields in checks:
+            name = str(item.get("id") or "") if kind == "result" else format_locator(item)
+            pages = sorted(_pages(item.get("pdf_page")))
+            row = {"record": file.stem, "kind": kind, "id": name, "pages": pages, "values": [], "missing": []}
+            if not pages:
+                rows.append({**row, "status": "skipped", "reason": "no pdf_page"})
+                continue
+            targets = _targets(item, fields)
+            try:
+                text = _page_text(pdf, pages, cache)
+            except ValueError as exc:
+                rows.append({**row, "status": "error", "reason": str(exc)})
+                continue
+            found = [v for _, v in number_tokens(text, strict=False)]
+            missing = [w for w, v in targets if not any(values_match(w, v, f) for f in found)]
+            row.update(values=[w for w, _ in targets], missing=missing)
+            if not targets:
+                status = "no_numbers" if kind == "locator" else "missing"
+            else:
+                status = "missing" if missing else "ok"
+            rows.append({**row, "status": status})
+            if write and kind == "result":
+                span = f"{pages[0]}-{pages[-1]}" if len(pages) > 1 else str(pages[0])
+                item["verified_by"] = {"date": today, "method": f"read_pdf p.{span}", "ok": status == "ok"}
+                changed = True
+        if changed:
+            file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            written.append(file.name)
+    counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("ok", "missing", "no_numbers", "skipped", "error")}
+    return {"ok": counts["missing"] == 0 and counts["error"] == 0, "topic": str(topic),
+            "evidence_folder": str(evidence) if evidence else None, "summary": counts,
+            "checks": rows, "notes": notes, "written": written}
 
 
 def summary_line(result: dict[str, Any], folder: str | Path) -> str:
@@ -375,6 +528,12 @@ def main(argv=None) -> int:
     fmt = lab.add_mutually_exclusive_group()
     fmt.add_argument("--markdown", action="store_true", help="print a Markdown pipe table for a report")
     fmt.add_argument("--json", action="store_true", help="print JSON")
+    ver = sub.add_parser("verify", help="Re-read each result's PDF page from source_file and check its value "
+                                        "is printed there; exit 1 when one is missing.")
+    ver.add_argument("path", help="topic folder or its evidence/ folder")
+    ver.add_argument("--record", help="only this record (evidence file stem)")
+    ver.add_argument("--write", action="store_true", help="store verified_by on each checked result")
+    ver.add_argument("--json", action="store_true", help="print JSON")
     a = ap.parse_args(argv)
 
     if not Path(a.path).expanduser().is_dir():
@@ -399,6 +558,25 @@ def main(argv=None) -> int:
             print(f"{s['errors']} errors, {s['warnings']} warnings, {s['info']} info in {s['records']} evidence "
                   f"and {s['novelty_records']} novelty records")
         return 0 if result["summary"]["errors"] == 0 and result["evidence_folder"] else 1
+
+    if a.command == "verify":
+        result = verify_folder(a.path, record=a.record, write=a.write)
+        if a.json:
+            print(json.dumps(result, ensure_ascii=False, indent=1))
+        else:
+            if result["checks"]:
+                print(_table(["status", "record", "kind", "id", "page", "values", "missing / reason"],
+                             ([r["status"], r["record"], r["kind"], r["id"] or "-",
+                               ",".join(map(str, r["pages"])) or "-", " ".join(r["values"]) or "-",
+                               " ".join(r["missing"]) or r.get("reason", "")] for r in result["checks"])))
+            for note in result["notes"]:
+                print(f"note: {note}")
+            if result["written"]:
+                print(f"wrote verified_by to {', '.join(result['written'])}")
+            s = result["summary"]
+            print(f"{s['ok']} ok, {s['missing']} missing, {s['error']} errors, {s['skipped']} skipped, "
+                  f"{s['no_numbers']} locators without numbers")
+        return 0 if result["ok"] else 1
 
     rows = labels_folder(a.path)
     if a.json:

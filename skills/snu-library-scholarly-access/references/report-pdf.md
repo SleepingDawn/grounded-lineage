@@ -1,6 +1,8 @@
 # Report delivery (HTML first)
 Reports are read on screen. Write the finished report in Markdown, then render it with `render_report_pdf(markdown_path)` (CLI: `scholarly-access-agent render-report REPORT.md [-o OUT.html] [--format html|pdf] [--engine auto|quarto|reportlab]`). The default output is one standalone HTML page next to the Markdown (`output_path` = `html_path`): table of contents, figures and styles embedded, nothing loaded from the network. Add a PDF only when the user asks for one (sharing, submission, page-stable citation): `formats: ["html", "pdf"]` or `["pdf"]`. HTML needs Quarto; without it the built-in reportlab engine writes the PDF instead and says so in `warnings` (`quarto_unavailable`).
 
+**Citations are keys, resolved at render.** Write `[@larkin2014, p.9]`, `[@liang2023#k350]` (a stored result), or several `[@a, §2; @b]`; the key is the evidence file name. `render_report` turns each into the house style "(Larkin 외, 2014 [5], p.9)", numbers references by first citation, and replaces a `<!-- references -->` line with the reference table (title, venue, version read, derived evidence label). Before delivering, run `scholarly-access-agent report trace README.md`: it flags unknown keys, locators the record does not have, numbers not found in the cited records, and numbers in the summary without a citation. Fix every error; a remaining warning must be explained in the text (e.g. "계산값: A/B").
+
 Structure:
 1. `# Title`, then one metadata line (date · version · method · evidence files); it becomes the subtitle.
 2. Summary (한눈에 보기): 4–7 bullets, one claim each, with its key number and unit.
