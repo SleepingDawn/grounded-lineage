@@ -288,6 +288,19 @@ class PageAndReportTests(unittest.TestCase):
         self.assertIn("초록만 확인", html)
         self.assertIn("단계별 흐름", html)
 
+    def test_report_figure_points_the_html_report_at_the_clickable_page(self):
+        from PIL import Image as PILImage
+
+        def fake_figure(L, links, path):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            PILImage.new("RGB", (8, 8)).save(path)
+
+        rdir = self.root / "report"
+        with quiet(), mock.patch.object(report, "render_figure", side_effect=fake_figure):
+            self.assertEqual(report.main([str(self.root), "--report-dir", str(rdir), "--chapter", "3"]), 0)
+        md = (rdir / "lineage_section.md").read_text(encoding="utf-8")
+        self.assertIn('(figs/lineage.png "interactive=test_lineage.html")', md)
+
     def test_report_section_is_renderable_markdown(self):
         rdir = self.root / "report"
         with quiet():
@@ -303,8 +316,9 @@ class PageAndReportTests(unittest.TestCase):
         doc.write_text("# Doc\n\n2026-11-20 · test\n\n" + md, encoding="utf-8")
         result = render_report(doc)
         self.assertTrue(result["ok"], result)
-        # CI runners may lack a Korean font (no_korean_font); only rendering problems count here
-        self.assertEqual([w for w in result["warnings"] if not w.startswith("no_korean_font")], [])
+        # CI runners may lack a Korean font or Quarto; only rendering problems count here
+        self.assertEqual([w for w in result["warnings"]
+                          if not w.startswith(("no_korean_font", "quarto_unavailable"))], [])
 
 
 class CliTests(unittest.TestCase):

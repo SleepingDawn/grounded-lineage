@@ -1,0 +1,24 @@
+/* snu-report HTML theme: KRDS-style Korean typography, Tufte-style measure and quiet tables. */
+:root {
+  --snu-ink: #1d232b; --snu-muted: #5b6470; --snu-accent: #1f5f99;
+  --snu-rule: #d5dae1; --snu-head-bg: #eef2f6; --snu-zebra: #f8f9fb; --snu-callout: #f1f6fb;
+}
+body {
+  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  color: var(--snu-ink); font-size: 17px; line-height: 1.7; word-break: keep-all; overflow-wrap: anywhere;
+}
+p, li { max-width: 42em; }
+a { color: var(--snu-accent); }
+h1.title { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+p.subtitle { font-size: 0.85rem; color: var(--snu-muted); font-weight: 400; }
+h2 { font-size: 1.45rem; font-weight: 700; margin-top: 2.4rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--snu-rule); }
+h3 { font-size: 1.15rem; font-weight: 700; color: var(--snu-accent); margin-top: 1.8rem; }
+table { font-size: 0.86rem; line-height: 1.5; word-break: keep-all; }
+table thead th { background: var(--snu-head-bg); border-bottom: 1.5px solid #9aa3ae !important; }
+table tbody tr:nth-child(even) { background: var(--snu-zebra); }
+table td, table th { padding: 0.45rem 0.6rem !important; vertical-align: top; }
+blockquote { background: var(--snu-callout); border-left: 3px solid var(--snu-accent); padding: 0.8rem 1rem; border-radius: 4px; color: var(--snu-ink); }
+figcaption, .figure-caption { font-size: 0.85rem; color: var(--snu-muted); }
+code { color: #24527a; background: #f3f5f8; }
+figure.snu-interactive { margin: 1.5rem 0; }
+figure.snu-interactive iframe { width: 100%; height: 82vh; border: 1px solid var(--snu-rule); border-radius: 6px; background: #fff; }

@@ -48,9 +48,10 @@ class ReportTests(unittest.TestCase):
             report = root / "report.md"
             report.write_text(SAMPLE, encoding="utf-8")
 
-            result = render_report(report)
+            result = render_report(report, engine="reportlab")  # Quarto: test_quarto_report
 
             self.assertTrue(result["ok"], result)
+            self.assertEqual(result["engine"], "reportlab")
             self.assertEqual(result["title"], "Sample report")
             self.assertEqual(Path(result["output_path"]), report.with_suffix(".pdf").resolve())
             self.assertEqual([w for w in result["warnings"] if w.startswith("image")], [])

@@ -591,16 +591,17 @@ def _canvas_class(footer: str, font: str):
     return NumberedCanvas
 
 
-def _resolve_paths(markdown_path: str | Path, output_path: str | Path | None) -> tuple[Path, Path]:
+def _resolve_paths(markdown_path: str | Path, output_path: str | Path | None,
+                   suffix: str = ".pdf") -> tuple[Path, Path]:
     source = Path(markdown_path).expanduser()
     if source.suffix.lower() not in MARKDOWN_SUFFIXES:
         raise ReportError("markdown_path must be a .md or .markdown file")
     if not source.is_file():
         raise ReportError("markdown_path does not exist")
     source = source.resolve()
-    output = Path(output_path).expanduser() if output_path else source.with_suffix(".pdf")
-    if output.suffix.lower() != ".pdf":
-        raise ReportError("output_path must end with .pdf")
+    output = Path(output_path).expanduser() if output_path else source.with_suffix(suffix)
+    if output.suffix.lower() not in {".pdf", ".html"}:
+        raise ReportError("output_path must end with .html or .pdf")
     if output.is_symlink():
         raise ReportError("output_path must not be a symbolic link")
     if not output.parent.is_dir():
@@ -608,13 +609,52 @@ def _resolve_paths(markdown_path: str | Path, output_path: str | Path | None) ->
     return source, output.resolve()
 
 
-def render_report(markdown_path: str | Path, output_path: str | Path | None = None) -> dict[str, Any]:
-    """Render a Markdown report to an A4 PDF. Returns a JSON-safe status dict."""
+ENGINES = ("auto", "quarto", "reportlab")
+
+
+FORMATS = ("html", "pdf")
+
+
+def render_report(markdown_path: str | Path, output_path: str | Path | None = None,
+                  engine: str = "auto", formats: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
+    """Render a Markdown report. JSON-safe status dict; `output_path` in it is the main file.
+
+    Reports are read on screen, so the default output is one standalone HTML page (Quarto).
+    formats: any of "html", "pdf"; default ["html"], or ["pdf"] when output_path ends in .pdf.
+    engine: "auto" uses Quarto when installed, otherwise the built-in reportlab PDF;
+    "quarto" requires Quarto; "reportlab" forces the built-in PDF renderer.
+    """
+    from . import quarto_report
+
+    if engine not in ENGINES:
+        return {"ok": False, "status": "invalid_input", "reason": f"engine must be one of {', '.join(ENGINES)}"}
+    if formats is None:
+        wanted = (".pdf" if str(output_path or "").lower().endswith(".pdf") or engine == "reportlab" else ".html",)
+        formats = tuple(s.lstrip(".") for s in wanted)
+    formats = tuple(dict.fromkeys(str(f).lower() for f in formats))
+    if not formats or any(f not in FORMATS for f in formats):
+        return {"ok": False, "status": "invalid_input", "reason": "formats must be html and/or pdf"}
     try:
-        source, output = _resolve_paths(markdown_path, output_path)
+        source, output = _resolve_paths(markdown_path, output_path, "." + formats[0])
     except ReportError as exc:
         return {"ok": False, "status": "invalid_input", "reason": str(exc)}
+    notes: list[str] = []
+    if engine != "reportlab":
+        quarto = quarto_report.find_quarto()
+        if quarto:
+            return quarto_report.render_with_quarto(source, output, quarto, formats)
+        if engine == "quarto":
+            return {"ok": False, "status": "quarto_unavailable",
+                    "reason": "Quarto not found: install it (https://quarto.org) or set QUARTO_PATH"}
+        if "html" in formats:
+            notes.append("quarto_unavailable: the HTML report needs Quarto (https://quarto.org); "
+                         "wrote the PDF with the built-in reportlab engine instead")
+    result = _render_reportlab(source, output.with_suffix(".pdf"))
+    result["warnings"] = notes + result["warnings"]
+    return result
 
+
+def _render_reportlab(source: Path, output: Path) -> dict[str, Any]:
     fonts = Fonts()
     frame_width = PAGE_W - 2 * MARGIN_X
     frame_height = PAGE_H - MARGIN_TOP - MARGIN_BOTTOM
@@ -643,7 +683,10 @@ def render_report(markdown_path: str | Path, output_path: str | Path | None = No
     pages = len(PdfReader(str(output)).pages)
     return {
         "ok": True,
+        "engine": "reportlab",
         "output_path": str(output),
+        "html_path": None,
+        "pdf_path": str(output),
         "pages": pages,
         "title": title,
         "font": fonts.label,

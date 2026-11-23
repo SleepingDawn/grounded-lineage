@@ -226,12 +226,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     render_report_command = subcommands.add_parser(
         "render-report",
-        help="Render a finished Markdown research report to a readable A4 PDF (local files only).",
+        help="Render a finished Markdown research report to a standalone HTML page (or PDF) (local files only).",
     )
     render_report_command.add_argument("path", help="Report Markdown file (.md).")
     render_report_command.add_argument(
         "-o", "--output", type=Path,
-        help="Output .pdf path (default: next to the Markdown file, same name).",
+        help="Output .html or .pdf path (default: next to the Markdown file, same name).",
+    )
+    render_report_command.add_argument(
+        "--engine", choices=("auto", "quarto", "reportlab"), default="auto",
+        help="auto: Quarto when installed, else the built-in reportlab PDF.",
+    )
+    render_report_command.add_argument(
+        "--format", dest="formats", action="append", choices=("html", "pdf"),
+        help="Output format, repeatable (default: html; pdf when -o ends in .pdf).",
     )
 
     subcommands.add_parser(
@@ -331,7 +339,7 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "render-report":
         from scholarly_access_agent.runtime.report import render_report
-        result = render_report(args.path, args.output)
+        result = render_report(args.path, args.output, engine=args.engine, formats=args.formats)
         write_json(result)
         return 0 if result["ok"] else 1
 

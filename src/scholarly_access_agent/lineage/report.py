@@ -122,8 +122,10 @@ def section(L, data: Path, links: Links, chapter: int, figure: str | None, html_
     if L.get("meta", {}).get("lede"):
         out += [L["meta"]["lede"], ""]
     if figure:
+        # The HTML report inlines the clickable page in place of the PNG ("interactive=" title).
         out += [f"![계보도. 열은 계열, 행은 연도(등간격 아님). 실선은 직접 계승, 점선은 개념적 연결, "
-                f"굵은 선은 인용 네트워크 주경로. 원문 링크가 있는 클릭형 버전: {html_name}]({figure})", ""]
+                f"굵은 선은 인용 네트워크 주경로. 상자를 누르면 원문이 열립니다 (단독 페이지: {html_name})]"
+                f"({figure} \"interactive={html_name}\")", ""]
     out += [f"### {c}.1 갈라진 지점", ""] + axes_md(L)
     out += [f"### {c}.2 단계별 흐름", ""] + lanes_table(L) + [""]
     out += [f"### {c}.3 주요 흐름", ""] + trends_md(L)

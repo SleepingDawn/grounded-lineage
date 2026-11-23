@@ -16,7 +16,7 @@ scholarly-access-agent = "scholarly_access_agent.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-scholarly_access_agent = ["data/*.json", "lineage/assets/*"]
+scholarly_access_agent = ["data/*.json", "data/quarto/*", "lineage/assets/*"]
 
 [project.optional-dependencies]
 dev = ["PyYAML==6.0.3"]
