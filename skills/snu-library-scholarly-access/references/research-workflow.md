@@ -5,15 +5,22 @@ Log each query, source, date, and candidate DOI/arXiv ID/URL. Normalize DOI case
 
 **Version priority (journal first).** If a peer-reviewed journal version exists, it is the version to read and cite: try PMC/Europe PMC (`read_url`), then the publisher page, open access or subscription (`download_pdf` → `read_pdf`), subject to access-and-auth.md; the per-publisher route is in publisher-routes.md. Fall back to the arXiv/preprint only when the journal version is unavailable, access-restricted, or retrieval fails, and record the reason (`access restriction` vs `tool error`). A preprint may still be read to supplement content missing from the journal version (e.g., an appendix); mark such evidence as preprint. Sub-agents must follow the same priority and report which version they read.
 
-## Tiers and default budgets
-State the budget at the start and report what was actually spent.
+## Tiers and budgets
+State the budget at the start (which preset, with its numbers) and report what was actually spent.
 
-| Tier | Purpose | Tool | Default budget (trend review) | Context cost |
-| --- | --- | --- | --- | --- |
-| 1 Screen | relevance from metadata | native search, publisher/arXiv abstract pages | 50–100 candidates | ~100–300 tokens each |
-| 2 Text | locate and read evidence | `read_url` outline → `terms` → `sections` | 15–30 papers | ~1–4k tokens each |
-| 3 PDF | paywalled, page citation, broken HTML | `download_pdf` → `read_pdf` | ≤ 10 papers | ~2–6k tokens each |
-| 4 Figures | figure decides the claim | `image_url` / page image | ≤ 5 figures | ~1–2k tokens each |
+| Tier | Purpose | Tool | Default (trend review) | Deep | Context cost |
+| --- | --- | --- | --- | --- | --- |
+| 1 Screen | relevance from metadata | native search, publisher/arXiv abstract pages | 50–100 candidates | 150–250 candidates | ~100–300 tokens each |
+| 2 Text | locate and read evidence | `read_url` outline → `terms` → `sections` | 15–30 papers | 40–60 papers | ~1–4k tokens each |
+| 3 PDF | paywalled, page citation, broken HTML | `download_pdf` → `read_pdf` | ≤ 10 papers | ≤ 30 papers | ~2–6k tokens each |
+| 4 Figures | figure decides the claim | `image_url` / page image | ≤ 5 figures | ≤ 15 figures | ~1–2k tokens each |
+
+**Choosing the preset.** Use **Deep** when the user asks for maximum or exhaustive effort in any wording ("최대로", "철저히", "깊게", "빠짐없이", "max effort", "thorough", "exhaustive"); otherwise **Default**. Numbers the user gives override either preset, tier by tier. Under Deep:
+- Tier 2–3 reading always goes to sub-agents (below), whatever the count.
+- Before recording a paper as `초록만 확인` or `미확인` after `blocked`, `login_required`, `no_pdf_found` or `unsupported_domain`, try every open-copy route in publisher-routes.md (PMC/Europe PMC, HAL, repository, arXiv/preprint).
+- Stop on three, not two, successive query refinements without new relevant evidence (Searching and stopping).
+
+Deep reads more of what is accessible; it never widens access. Bot checks, `login_required` and publisher AI-use restrictions (access-and-auth.md) apply unchanged.
 
 Keep `max_chars` small (4–8k) for term searches and raise it only for the sections you must read whole. Prefer one `sections` call over repeated term calls once you know where the evidence is.
 
@@ -23,6 +30,6 @@ When the Tier 2–3 list exceeds about 15 papers, split it into batches of 4–6
 ## Searching and stopping
 Search question variants and competing results. For trends use current-year/preprint coverage alongside recent peer-reviewed evidence. Screen titles/abstracts, then inspect the shortlist's main Methods/Results and relevant supplements. Record what was actually read. Term results are locators, not a quality score.
 
-Stop at the requested scope/budget or when two successive query refinements yield no new relevant evidence. Keep plausible unread papers explicitly marked. Never equate inability to access with exclusion for scientific reasons.
+Stop at the requested scope/budget or when two successive query refinements (three under the Deep preset) yield no new relevant evidence. Keep plausible unread papers explicitly marked. Never equate inability to access with exclusion for scientific reasons.
 
 Synthesize by supported theme, limitations and conflicting evidence. Link original sources and identify preprints. For comparisons hold question, cutoff date and candidate budget fixed; distinguish coverage, body support, corrections and runtime. A single comparison is not a general accuracy benchmark.
