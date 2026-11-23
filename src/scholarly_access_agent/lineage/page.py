@@ -816,7 +816,7 @@ def svg(L, links, ev=None, footer=True):
             lab = labels.get(n["id"]) or LABEL_NONE
             label = (f'{n["title"]}, {n["sub"]}. {info.get("venue") or ""}. 근거 수준: {lab}. 눌러서 근거 패널 열기'
                      + ("" if url else ". 연결된 원문 없음"))
-            cls = "node" + (" key" if n.get("key") else "") + (" pre" if kind == "preprint" else "")
+            cls = "node" + (" key" if n.get("key") else "") + (" pre" if kind == "preprint" or n.get("_prelim") else "")
             col = f"var(--d-{n['design']})" if n.get("design") in DESIGN_KO else f"var(--c{lane})"
             inner = (f'<rect x="{x}" y="{y}" width="{BOX_W}" height="{BOX_H}" rx="6" '
                      f'style="fill:color-mix(in srgb, {col} {26 if n.get("key") else 12}%, var(--surface));stroke:{col}"/>'
@@ -1349,7 +1349,7 @@ def lane_box(L, n, by, edges, labels, links, qn, cols):
     url, kind, info = links.of(n.get("openalex"), n.get("url"))
     lab = labels.get(n["id"]) or LABEL_NONE
     col = f"var(--d-{n['design']})" if n.get("design") in DESIGN_KO else f"var(--c{lane})"
-    cls = "lvb" + (" key" if n.get("key") else "") + (" pre" if kind == "preprint" else "")
+    cls = "lvb" + (" key" if n.get("key") else "") + (" pre" if kind == "preprint" or n.get("_prelim") else "")
     tag = f'<span class="lvtag">{DESIGN_TAG[n["design"]]}</span>' if n.get("design") in DESIGN_KO else ""
     aria = f'{n["title"]}, {n["sub"]}. 근거 수준: {lab}. 눌러서 근거 패널 열기'
     stubs, seen = [], set()
@@ -1400,7 +1400,7 @@ def narrow_legend(L, links, ev=None):
             li.append(f'<li>{icon}근거: {k if kind else k + " (표시 없음)"}</li>')
     n_pre = n_preprints(L, links)
     if n_pre or not topic:
-        li.append(f'<li><span class="sw pre"></span>저널판 없음 (프리프린트 {n_pre}편)</li>')
+        li.append(f'<li><span class="sw pre"></span>동료 심사 전 또는 초록만 확인 ({n_pre}편: 프리프린트·학위논문·보고서 등)</li>')
     li.append('<li class="wide"><span class="sw stub">→ Q2</span>다른 열로 이어지는 연결 (누르면 그 열로)</li>' if topic else
               '<li class="wide"><span class="sw stub">→ 갈래</span>다른 갈래로 이어지는 연결 (누르면 그 갈래로)</li>')
     return f'<details class="nlegend"><summary>범례</summary><ul class="nlg">{"".join(li)}</ul></details>'
@@ -1501,17 +1501,32 @@ def lineage_legend(L, n_pre):
     return (f'<div class="legend"><span>{legend_line("s")}직접 확장·변형</span><span>{legend_line("d")}개념적 연결</span>'
             f'<span>{legend_line("m")}인용 네트워크 주경로 (SPC)</span>{legend_x(L)}\n'
             f'  <span><svg width="26" height="14" aria-hidden="true"><rect x="1" y="1" width="24" height="12" rx="3" '
-            f'style="fill:none;stroke:var(--muted)" stroke-dasharray="4 2"/></svg>저널판 없음 (프리프린트 {n_pre}편)</span></div>')
+            f'style="fill:none;stroke:var(--muted)" stroke-dasharray="4 2"/></svg>동료 심사 전 또는 초록만 확인 ({n_pre}편: 프리프린트·학위논문·보고서 등)</span></div>')
 
 
 def preprint_legend(n_pre):
     return (f'<div class="legend"><span><svg width="26" height="14" aria-hidden="true"><rect x="1" y="1" width="24" '
             f'height="12" rx="3" style="fill:none;stroke:var(--muted)" stroke-dasharray="4 2"/></svg>'
-            f'저널판 없음 (프리프린트 {n_pre}편)</span></div>') if n_pre else ""
+            f'동료 심사 전 또는 초록만 확인 ({n_pre}편: 프리프린트·학위논문·보고서 등)</span></div>') if n_pre else ""
 
 
 def n_preprints(L, links):
-    return sum(1 for n in L["nodes"] if links.of(n.get("openalex"), n.get("url"))[1] == "preprint")
+    """Boxes drawn dashed: preprints by their link, plus boxes `lineage quality` found not peer-reviewed or read as
+    abstract only (mark_preliminary)."""
+    return sum(1 for n in L["nodes"] if links.of(n.get("openalex"), n.get("url"))[1] == "preprint" or n.get("_prelim"))
+
+
+def mark_preliminary(L, data) -> int:
+    """Flag (in memory) the boxes data/quality.json lists as not peer-reviewed or abstract-only; they are drawn like
+    preprints. No quality.json: nothing changes."""
+    q = load(Path(data) / "quality.json", {}).get("nodes", {})
+    n = 0
+    for node in L.get("nodes", []):
+        v = q.get(node.get("id"))
+        if v and v.get("openalex") == node.get("openalex") and {"not_peer_reviewed", "abstract_only"} & set(v.get("flags", [])):
+            node["_prelim"] = True
+            n += 1
+    return n
 
 
 def embed_page(L, links, ev=None, evbase="evidence/"):
@@ -1671,6 +1686,7 @@ def main(argv=None):
     xd = L["meta"].get("expanded_dir")
     xdata = work / xd if xd else None
     links = Links(load(data / "links.json", {}), L.get("link_overrides"))
+    mark_preliminary(L, data)
     missing = [n["openalex"] for n in L["nodes"] if n.get("openalex") and n["openalex"] not in links.links]
     if missing:
         print("warning: no resolved link for", " ".join(missing), "-> run `lineage links`; falling back to OpenAlex pages")

@@ -21,6 +21,7 @@ COMMANDS = {
     "gold": ("gold", "gold freeze: fix an independent gold set (IDs/DOIs) in DATA_DIR/gold.json."),
     "log-search": ("searchlog", "Log a search outside OpenAlex (web/arXiv/KCI) to data/searches.json."),
     "links": ("links", "Resolve journal-first links for OpenAlex IDs or a lineage.json."),
+    "quality": ("source_check", "Retracted, not peer-reviewed, unverified-venue and off-field boxes; where each was found."),
     "check": ("check", "Validate lineage.json; layout, edge citation-link, dispute and search warnings."),
     "page": ("page", "Validate lineage.json and render the interactive page (--embed: map-only embed variant)."),
     "report-section": ("report", "Write the lineage chapter (Markdown, PNG figure, embed page) for a report."),

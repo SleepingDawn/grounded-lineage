@@ -166,9 +166,14 @@ Then, offline from the local corpus (`data_dir` and `expanded_dir`: `corpus.json
 | `unsaturated_search` | `data/queries.json` exists and no logged query reached novelty < 10% |
 | `not_found_without_search_log` | verdict, trends or limits say something was not found (찾지 못, not found, …) but `data/searches.json` is missing |
 | `era_recent_thin` | ≥ 10 field papers and ≥ 15% of the field are from the last three years, but fewer than 2 study boxes are (off when `meta.era_focus` is `origin`) |
+| `quality_retracted` | a box is retracted per OpenAlex (`lineage quality`, data/quality.json) |
+| `quality_key_preliminary` | a key box is not peer-reviewed (preprint, thesis, report) or was read as abstract only |
+| `quality_venue_unverified` | a box's journal has h-index < 10 and 2-year citedness < 0.5 in OpenAlex: check its indexing |
+| `quality_off_field` | a box found outside the corpus and its references cites none of the field's core papers |
+| `quality_stale` | boxes changed since `lineage quality` ran |
 | `era_founders_thin` | fewer than 2 of the 10 most-cited ancestors in `analysis.json` are boxes (off when `meta.era_focus` is `current`; generic tools may stay out) |
 
-Summary lines follow: `s edges: n with citation link, m without, k unverifiable (no OpenAlex/refs)`, and `era: x% of n field papers from <years>, k/m boxes; j/10 most-cited ancestors are boxes; focus <focus>`. An invalid `meta.era_focus` is a problem.
+Summary lines follow: `s edges: n with citation link, m without, k unverifiable (no OpenAlex/refs)`, and `era: x% of n field papers from <years>, k/m boxes; j/10 most-cited ancestors are boxes; focus <focus>`, and `quality: n boxes: … from the citation corpus, … from query widening, … cited by the collected papers, … found outside; … not peer-reviewed or read as abstract only, … retracted, …` (or `quality: not checked`). An invalid `meta.era_focus` is a problem.
 
 The report chapter adds a **검색 방법과 범위** section only when there is something to say: an unsaturated query log, searches logged with `lineage log-search`, or `adoption`/`mentions` runs (listed by id so verdict text can cite `adoption#n`).
 

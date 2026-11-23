@@ -24,8 +24,8 @@ import sys
 from pathlib import Path
 
 from .page import (DESIGN_KO, Links, base_css, contested_rows, edge_list, embed_name, is_event, lane_name, load,
-                   missing_evidence, mode, node_evidence, parse_desc, question_numbers, study_ref, svg, validate,
-                   warnings, write_embed)
+                   mark_preliminary, missing_evidence, mode, node_evidence, parse_desc, question_numbers, study_ref, svg,
+                   validate, warnings, write_embed)
 from .searchlog import saturation, searches, unsaturated_ko
 
 STATUS = {"fulltext": "본문 확인", "excerpts": "발췌 확인", "secondary": "인용 맥락만", "abstract": "초록만 확인",
@@ -195,7 +195,29 @@ def method_md(L, work: Path, data: Path) -> list[str]:
                 out.append(f"- {e.get('id')} ({e['_dir']}, {e.get('date', '')}): `{e.get('regex')}` → "
                            f"{e.get('matches')}/{e.get('denominator')} ({'+'.join(e.get('roles', []))})")
         out.append("")
+    out += quality_md(L, work)
     return out
+
+
+def quality_md(L, work: Path) -> list[str]:
+    """Where the boxes came from and how many rest on preliminary sources (data/quality.json); [] without it."""
+    from .source_check import load_quality
+
+    q = load_quality(L, work)
+    ids = {n["id"] for n in L.get("nodes", []) if n.get("kind") != "event"}
+    q = {i: v for i, v in (q or {}).items() if i in ids}
+    if not q:
+        return []
+    f = lambda k: sum(1 for v in q.values() if v["found"] == k)
+    has = lambda flag: [v for v in q.values() if flag in v["flags"]]
+    prelim = [v for v in q.values() if {"not_peer_reviewed", "abstract_only"} & set(v["flags"])]
+    line = (f"근거의 출처: 계보도 상자 {len(q)}개 중 {f('corpus')}개는 인용 코퍼스, {f('widened')}개는 검색식 확장, "
+            f"{f('cited')}개는 수집 논문들이 인용한 참고문헌, {f('outside')}개는 그 밖(웹 검색·원문 읽기)에서 찾았습니다.")
+    if prelim:
+        line += f" 동료 심사 전이거나 초록만 확인한 상자 {len(prelim)}개는 예비 근거로 보고 점선으로 표시했습니다."
+    if has("retracted"):
+        line += f" 철회된 논문 {len(has('retracted'))}편: " + ", ".join(f"{v['title']} ({v['year']})" for v in has("retracted")) + "."
+    return [line, ""]
 
 
 def rows_md(L, links: Links) -> list[str]:
@@ -345,6 +367,7 @@ def main(argv=None) -> int:
         print(f"warning: node {nid}: evidence/{stem}.json not found or unreadable", file=sys.stderr)
     data = work / L["meta"].get("data_dir", "data")
     links = Links(load(data / "links.json", {}), L.get("link_overrides"))
+    mark_preliminary(L, data)
     ev = node_evidence(L, work)
     rdir.mkdir(parents=True, exist_ok=True)
     figure = embed = None

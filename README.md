@@ -117,7 +117,7 @@ All commands are `scholarly-access-agent <command>`; `<command> -h` lists option
 | | `lineage expand` | One-hop snowballing for a plain review: references and citing papers of a few seeds, ranked by seed links, screened papers hidden |
 | | `lineage seed`, `collect`, `analyze` | Seed candidates, citation neighbourhood, RPYS / clusters / SPC main path |
 | | `lineage keywords`, `query-test`, `gold`, `log-search`, `mentions`, `adoption` | Build and test search vocabulary, freeze a gold set, log outside searches, count mentions and forward-only adoption |
-| | `lineage links`, `check`, `page`, `report-section` | Journal-first links, validation and layout warnings, interactive page (`--embed`), report chapter |
+| | `lineage links`, `quality`, `check`, `page`, `report-section` | Journal-first links, source quality of the boxes (retracted, not peer-reviewed, unverified journal, off-field, where each was found), validation and layout warnings, interactive page (`--embed`), report chapter |
 | Figures | `viz figure` | A figure from an agent-written spec; every number from evidence results |
 | | `viz effects`, `adoption`, `timeline` | Forest plot of results, adoption share by year, citations and RPYS spectrum |
 | Cost | `cost estimate`, `record`, `report` | Dry-run estimate under a cap, ledger of measured stages, estimate vs measured with calibration |

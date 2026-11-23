@@ -5,7 +5,9 @@
 For every record with a DOI (in `paper_id` or `journal_version`) it fetches the Crossref
 record and compares title, year, first author's family name and venue, and maps the
 Crossref item type to a suggested `venue_type`. Records without a DOI (many Korean items)
-are listed for a manual KCI/RISS check. Only DOIs are sent to Crossref.
+are listed for a manual KCI/RISS check. Then, from OpenAlex, it flags retracted papers (status `retracted`,
+exit code 1) and journals with h-index < 10 and 2-year citedness < 0.5 (check their indexing by hand).
+Only DOIs are sent to Crossref and OpenAlex.
 """
 from __future__ import annotations
 
@@ -77,9 +79,25 @@ def _first_author(record: dict) -> str:
 _STOP = {"of", "the", "and", "for", "in", "on", "de", "a"}
 
 
+def _abbrev_match(mine: str, theirs: str) -> bool:
+    """ISO-style abbreviation ("J. Chem. Phys. 140, 214110", "Appl. Surf. Sci.") against the full title: each
+    abbreviated word, up to the first token with a digit (volume, pages, year), starts the next significant word."""
+    abbr = []
+    for tok in re.split(r"[\s,;:()]+", mine or ""):
+        if not tok or re.search(r"\d", tok):
+            break
+        abbr.append(_norm(tok.rstrip(".")))
+    abbr = [a for a in abbr if a and a not in _STOP]
+    full = [w for w in _norm(theirs).split() if w not in _STOP]
+    if len(abbr) < 2 or len(abbr) != len(full):
+        return False
+    return all(f.startswith(a) for a, f in zip(abbr, full))
+
+
 def _venue_match(mine: str, theirs: str) -> bool:
-    """Full-name similarity, or an acronym in the record (PNAS, PRB, JCTC) matching the initials."""
-    if similarity(mine, theirs) >= 0.5 or _norm(theirs) in _norm(mine):
+    """Full-name similarity, an acronym in the record (PNAS, PRB, JCTC) matching the initials, or an ISO-style
+    abbreviation (J. Chem. Phys., Appl. Surf. Sci.)."""
+    if similarity(mine, theirs) >= 0.5 or _norm(theirs) in _norm(mine) or _abbrev_match(mine, theirs):
         return True
     words = _norm(mine).split()
     first = words[0] if words else ""
@@ -113,7 +131,35 @@ def compare(record: dict, cr: dict) -> dict[str, Any]:
             "issues": issues}
 
 
-def check(paths: list[Path], fetch: Callable[[str], dict | None] = fetch_crossref, offline: bool = False) -> dict:
+def add_quality(rows: list[dict], quality: Callable[[list[str]], dict]) -> None:
+    """Retraction and venue signals from OpenAlex for the rows with a DOI (see quality.py)."""
+    dois = [r["doi"] for r in rows if r.get("doi")]
+    if not dois:
+        return
+    try:
+        by_doi = quality(dois).get("by_doi", {})
+    except Exception as exc:  # the metadata check must not fail because the quality lookup did
+        for r in rows:
+            if r.get("doi"):
+                r.setdefault("issues", []).append(f"quality lookup failed ({type(exc).__name__}): retraction not checked")
+        return
+    for r in rows:
+        info = by_doi.get((r.get("doi") or "").lower())
+        if not info:
+            continue
+        r["quality"] = {k: info.get(k) for k in ("flags", "type", "venue", "h_index", "citedness", "in_doaj")}
+        if "retracted" in info["flags"]:
+            r["status"] = "retracted"
+            r.setdefault("issues", []).append("RETRACTED (OpenAlex / Retraction Watch): not evidence; if it must be "
+                                              "mentioned, say it was retracted")
+        if "venue_unverified" in info["flags"]:
+            r.setdefault("issues", []).append(
+                f"journal '{(info.get('venue') or '')[:50]}' has h-index {info.get('h_index')} and 2-year citedness "
+                f"{info.get('citedness') or 0:.2f} in OpenAlex: check its indexing (Scopus/WoS) and editorial board")
+
+
+def check(paths: list[Path], fetch: Callable[[str], dict | None] = fetch_crossref, offline: bool = False,
+          quality: Callable[[list[str]], dict] | None = None) -> dict:
     files: list[Path] = []
     for path in paths:
         files += sorted(path.glob("*.json")) if path.is_dir() else [path]
@@ -140,7 +186,11 @@ def check(paths: list[Path], fetch: Callable[[str], dict | None] = fetch_crossre
         if not record.get("venue_type"):
             row.setdefault("issues", []).append("record has no venue_type")
         rows.append(row)
-    summary = {s: sum(1 for r in rows if r["status"] == s) for s in ("ok", "mismatch", "manual", "not_found", "skipped", "unreadable")}
+    if quality is not None and not offline:
+        add_quality(rows, quality)
+    summary = {s: sum(1 for r in rows if r["status"] == s)
+               for s in ("ok", "mismatch", "retracted", "manual", "not_found", "skipped", "unreadable")}
+    summary["venue_unverified"] = sum(1 for r in rows if "venue_unverified" in (r.get("quality") or {}).get("flags", []))
     return {"checked": len(rows), "summary": summary, "records": rows}
 
 
@@ -151,9 +201,12 @@ def main(argv=None) -> int:
     c.add_argument("paths", nargs="+", help="evidence folder(s) or record .json files")
     c.add_argument("--offline", action="store_true", help="only list DOIs and missing fields; no network")
     a = ap.parse_args(argv)
-    out = check([Path(p) for p in a.paths], offline=a.offline)
+    from .quality import lookup
+
+    out = check([Path(p) for p in a.paths], offline=a.offline, quality=lambda dois: lookup(dois=dois))
     print(json.dumps(out, ensure_ascii=False, indent=1))
-    return 0 if out["summary"]["mismatch"] == 0 and out["summary"]["unreadable"] == 0 else 1
+    s = out["summary"]
+    return 0 if s["mismatch"] == 0 and s["unreadable"] == 0 and s["retracted"] == 0 else 1
 
 
 if __name__ == "__main__":

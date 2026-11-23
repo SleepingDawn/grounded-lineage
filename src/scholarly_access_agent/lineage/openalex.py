@@ -45,8 +45,8 @@ def api_key() -> str | None:
     return user_env("OPENALEX_API_KEY")
 
 
-def _request(params: dict, timeout: int = 60) -> tuple[int, dict, dict]:
-    url = API + "?" + urlencode(params)
+def _request(params: dict, timeout: int = 60, endpoint: str = "works") -> tuple[int, dict, dict]:
+    url = (API if endpoint == "works" else API.rsplit("/", 1)[0] + "/" + endpoint) + "?" + urlencode(params)
     req = Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urlopen(req, timeout=timeout, context=_context()) as resp:
@@ -69,7 +69,8 @@ def _throttle(sleep) -> None:
         _last_start[0] = time.monotonic()
 
 
-def get(params: dict, tries: int = 8, sleep=time.sleep) -> dict:
+def get(params: dict, tries: int = 8, sleep=time.sleep, endpoint: str = "works") -> dict:
+    """GET one OpenAlex list endpoint ("works" by default; "sources" for journals)."""
     key = api_key()
     if key:
         params = {**params, "api_key": key}
@@ -77,7 +78,7 @@ def get(params: dict, tries: int = 8, sleep=time.sleep) -> dict:
     for i in range(tries):
         _throttle(sleep)
         try:
-            status, headers, body = _request(params)
+            status, headers, body = _request(params) if endpoint == "works" else _request(params, endpoint=endpoint)
         except (URLError, TimeoutError, OSError):
             status, headers, body = None, {}, {}
         if status == 200:

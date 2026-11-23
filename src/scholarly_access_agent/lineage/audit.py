@@ -10,6 +10,9 @@
   era_recent_thin             many field papers from the last three years, (almost) none in the tree
   era_founders_thin           (almost) none of the 10 most-cited ancestors in the tree
                               (meta.era_focus 'origin' / 'current' turns off the warning for the other era)
+  quality_*                   from data/quality.json (`lineage quality`): retracted boxes, key boxes that are not
+                              peer-reviewed or read as abstract only, unverified venues, off-field outside finds,
+                              and boxes changed since the last run
 
 All are warnings: an old lineage.json stays valid.
 """
@@ -226,6 +229,11 @@ def audit(L, work: Path) -> tuple[list[str], list[str]]:
                      "say so in the method section or run more query variants")
     warns += not_found(L, data)
     w, line = era_balance(L, work)
+    warns += w
+    summary += line
+    from .source_check import quality_warnings
+
+    w, line = quality_warnings(L, work)
     warns += w
     summary += line
     return warns, summary
