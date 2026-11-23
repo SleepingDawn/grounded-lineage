@@ -116,6 +116,13 @@ def era_note(gold_years, result_years) -> str:
             "Add key papers from those years to the gold (`lineage gold freeze`), or judge them separately")
 
 
+SAT_MIN_PRECISION = 0.5  # a query whose results are mostly off-topic cannot show that the search converged
+
+
+def is_saturated(on, novelty: float, precision: float) -> bool:
+    return bool(on) and novelty < 0.10 and precision >= SAT_MIN_PRECISION
+
+
 def split_blocks(q: str) -> tuple[list, list]:
     """(AND blocks, NOT blocks) at the top level of a boolean query; quotes and parentheses are respected.
     A top-level OR (no parentheses around it) is ambiguous to split, so the query is then one block."""
@@ -334,7 +341,9 @@ def report_one(d, a, query, label, gold, r, found, missed, gold_years=None):
     if era:
         print(era)
     print(f"novelty  : {len(new_on)}/{len(on)} in-field results not yet in corpus or its references ({novelty:.0%})"
-          + ("  -> SATURATED" if on and novelty < 0.10 else ""))
+          + ("  -> SATURATED" if is_saturated(on, novelty, precision) else
+             f"  (low, but precision {precision:.0%} < {SAT_MIN_PRECISION:.0%}: off-topic results, not saturation)"
+             if on and novelty < 0.10 else ""))
     for w in sorted(new_on, key=lambda w: -(w.get("cited_by_count") or 0))[:a.list]:
         print(f"   new {short(w['id'])} {w.get('publication_year')} cit={w.get('cited_by_count'):<5} {(w.get('title') or '')[:85]}")
 
@@ -355,12 +364,12 @@ def report_one(d, a, query, label, gold, r, found, missed, gold_years=None):
                 "gold_found": len(found), "gold_found_ids": sorted(found),
                 "gold_era": era,
                 "new_on_topic": len(new_on),
-                "novelty": round(novelty, 3), "saturated": bool(on) and novelty < 0.10,
+                "novelty": round(novelty, 3), "saturated": is_saturated(on, novelty, precision),
                 "new_examples": [{"id": short(w["id"]), "year": w.get("publication_year"),
                                   "cites": w.get("cited_by_count"), "title": w.get("title")}
                                  for w in sorted(new_on, key=lambda w: -(w.get("cited_by_count") or 0))[:5]]})
     log_p.write_text(json.dumps(log, indent=1, ensure_ascii=False), encoding="utf-8")
     return {"label": label or query[:28], "hits": total, "precision": precision,
             "recall": f"{len(found)}/{len(gold)}" if gold else "-", "novelty": novelty,
-            "saturated": bool(on) and novelty < 0.10, "strategy": strategy}
+            "saturated": is_saturated(on, novelty, precision), "strategy": strategy}
 

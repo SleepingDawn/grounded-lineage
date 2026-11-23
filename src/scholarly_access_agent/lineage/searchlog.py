@@ -52,7 +52,10 @@ def saturation(data: Path) -> dict | None:
     log = load_json(Path(data) / "queries.json", [])
     if not log:
         return None
-    sat = [e.get("label") or e.get("query", "")[:40] for e in log if e.get("saturated")]
+    # a query with mostly off-topic results (precision < 50%) shows nothing about convergence, even if logged as
+    # saturated by an older version
+    sat = [e.get("label") or e.get("query", "")[:40] for e in log
+           if e.get("saturated") and (e.get("precision") is None or e["precision"] >= 0.5)]
     last = log[-1]
     return {"n": len(log), "saturated": sat, "last_novelty": last.get("novelty"),
             "last_label": last.get("label") or last.get("query", "")[:40]}

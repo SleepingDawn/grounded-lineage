@@ -11,7 +11,8 @@ Usage:
                  [--per-seed 40] [--top 40] [--since 2018] [--out data/expansion.json]
 SEED: DOI, arXiv:ID or OpenAlex ID (W...). --known: DOIs/IDs, or files/folders whose
 text holds DOIs, arXiv IDs or JSON "title" fields (an evidence/ folder, a candidate log).
-Prints JSON.
+Prints JSON. With --out, the fetched works are also saved as corpus.json next to it (unless one exists), so
+`lineage query-test <that folder>` can measure the review's queries and `evidence coverage` its era balance.
 About 3 + references/50 OpenAlex requests per seed.
 """
 from __future__ import annotations
@@ -91,7 +92,9 @@ def venue(w: dict) -> str:
 
 
 def expand(seeds: list[str], per_seed: int = 40, since: int | None = None,
-           known: tuple = (set(), set(), set())) -> list[dict]:
+           known: tuple = (set(), set(), set()), corpus: dict | None = None) -> list[dict]:
+    """Ranked candidate rows. With `corpus` (a dict), also fill it with the fetched works and their roles
+    (seed / backward / forward), the shape `lineage collect` writes, so query tests can run on a plain review."""
     seed_works = fetch_many(seeds, FIELDS)
     links: dict[str, dict[str, set[str]]] = {}
 
@@ -109,6 +112,12 @@ def expand(seeds: list[str], per_seed: int = 40, since: int | None = None,
             link(k, s, "forward")
             works.setdefault(k, w)
 
+    if corpus is not None:
+        for s, w in seed_works.items():
+            corpus[s] = {**w, "_role": ["seed"]}
+        for k, rel in links.items():
+            if k in works:
+                corpus[k] = {**works[k], "_role": [r for r in ("backward", "forward") if rel[r]]}
     year_now = dt.date.today().year
     known_dois, known_ids, *rest = known
     known_titles = rest[0] if rest else set()
@@ -152,7 +161,8 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     seeds = resolve_seeds(a.seeds)
-    rows = expand(seeds, a.per_seed, a.since, known_keys(a.known))
+    corpus: dict = {}
+    rows = expand(seeds, a.per_seed, a.since, known_keys(a.known), corpus)
     shown = [r for r in rows if a.include_known or not r["known"]]
     if a.top:
         shown = shown[:a.top]
@@ -164,5 +174,12 @@ def main(argv=None) -> int:
         out.write_text(json.dumps({**summary, "date": dt.date.today().isoformat(), "rows": rows},
                                   ensure_ascii=False, indent=1), encoding="utf-8")
         summary["out"] = str(out)
+        # the fetched neighbourhood as a small corpus: `lineage query-test` and `evidence coverage` use it
+        cp = out.parent / "corpus.json"
+        if cp.exists():
+            summary["corpus"] = f"{cp} exists (a lineage corpus?); left unchanged"
+        else:
+            cp.write_text(json.dumps(corpus, ensure_ascii=False), encoding="utf-8")
+            summary["corpus"] = str(cp)
     print(json.dumps({**summary, "rows": shown}, ensure_ascii=False, indent=1))
     return 0

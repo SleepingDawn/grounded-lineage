@@ -544,11 +544,22 @@ def main(argv=None) -> int:
     ver.add_argument("--record", help="only this record (evidence file stem)")
     ver.add_argument("--write", action="store_true", help="store verified_by on each checked result")
     ver.add_argument("--json", action="store_true", help="print JSON")
+    cov = sub.add_parser("coverage", help="Was the search measured, and do the read records cover both recent and "
+                                          "foundational work? (offline; warnings only)")
+    cov.add_argument("path", help="topic folder")
+    cov.add_argument("--era-focus", choices=("both", "origin", "current"), default="both",
+                     help="the era the question asks about; only switches off the warning for the other era")
+    cov.add_argument("--json", action="store_true", help="print JSON")
     a = ap.parse_args(argv)
 
     if not Path(a.path).expanduser().is_dir():
         print(f"not a folder: {a.path}", file=sys.stderr)
         return 2
+    if a.command == "coverage":
+        from .coverage import coverage, text
+        res = coverage(Path(a.path).expanduser(), a.era_focus)
+        print(json.dumps(res, ensure_ascii=False, indent=1) if a.json else text(res))
+        return 0
     if a.command == "lint":
         result = lint_folder(a.path)
         if a.json:

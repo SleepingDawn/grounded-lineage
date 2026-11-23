@@ -83,11 +83,11 @@ The `calculation` playbook turns a card or a paper's method into a calculation p
 
 ## How a run works
 
-1. **Search.** Native web/academic search finds candidates; queries and sources are logged. Every review except a quick search then runs `lineage expand` on 3–5 central seeds: one hop of their references and citing papers, ranked by how many seeds each connects to, so papers the search missed are screened too. Lineage runs collect the OpenAlex neighbourhood and test boolean queries for precision, recall on a frozen gold set and novelty.
+1. **Search.** Native web/academic search finds candidates; queries and sources are logged. Every review except a quick search then runs `lineage expand` on 3–5 central seeds: one hop of their references and citing papers, ranked by how many seeds each connects to, so papers the search missed are screened too. The expansion is saved as a small corpus, so plain reviews also test their main queries for precision, recall on a frozen gold set, novelty and anchor blocks (`lineage query-test --drop-blocks`) and check the era balance of what was read (`evidence coverage`). Lineage runs collect the larger OpenAlex neighbourhood and do the same on it.
 2. **Resolve versions.** `resolve <DOI>` gives the Crossref record, Unpaywall open copies and ranked reading routes. Journal version first; preprint only as a labelled fallback.
 3. **Read.** Text first: `read_url` for open-access HTML (outline, then terms, then sections); `download_pdf` + `read_pdf` for paywalled papers, page citations or figures. More than ~15 papers go to parallel reader sub-agents whose briefs open with the byte-identical reader pack (`pack reader`); readers write records to files and return at most 10 lines (file handback).
 4. **Evidence records.** One record per paper: `access` (`fulltext_pdf`, `fulltext_html`, `excerpts`, `secondary`, `abstract_only`, `unavailable`), version read, criteria with locators, and every reportable number in `results[]` (value, range, unit, condition, page; `source_file` for local PDFs).
-5. **Lint and labels.** `evidence lint` must pass; `evidence labels` derives 본문 확인 / 발췌 확인 / 인용 맥락만 / 초록만 확인 / 미확인. `refs check` compares records with Crossref by DOI.
+5. **Lint and labels.** `evidence lint` must pass; `evidence labels` derives 본문 확인 / 발췌 확인 / 인용 맥락만 / 초록만 확인 / 미확인. `refs check` compares records with Crossref by DOI and flags retracted papers and unverified journals (OpenAlex).
 6. **Report with citation keys.** The report cites `[@larkin2014, p.9]` or `[@liang2023#k350]`; rendering turns them into "(Larkin 외, 2014 [5], p.9)" and fills a reference table with the version read and the derived label.
 7. **Trace and verify.** `report trace` flags unknown keys, missing locators, numbers not in the cited records and uncited numbers in the summary; `evidence verify --write` re-reads each result's PDF page and records `verified_by`.
 8. **Figures planned per question.** For each section (reader question) decide figure, table or neither in `figs/figures.json`; write `figs/<name>.fig.json` specs whose rows name evidence records, and draw them with `viz figure`. Literal numbers and mixed units are rejected; read depth shows in the marks, the page in the tooltip.
@@ -109,12 +109,12 @@ All commands are `scholarly-access-agent <command>`; `<command> -h` lists option
 | | `discover-pdfs`, `download-pdf`, `download-many` | Find PDF links; download one, or a JSONL batch in one browser context |
 | | `read-pdf` | Page-grounded excerpts by `terms` or by `pages` (never both) |
 | | `pack reader` | Print the reader pack byte for byte (`--check`: hash and size) |
-| Evidence & reports | `evidence lint` / `labels` / `verify` | Check records, derive read-depth labels, re-check results on the PDF page |
+| Evidence & reports | `evidence lint` / `labels` / `verify` / `coverage` | Check records, derive read-depth labels, re-check results on the PDF page, summarise the measured search and the era balance of what was read |
 | | `refs check` | Compare records with Crossref by DOI (only DOIs are sent) |
 | | `report trace` | Trace citation keys and numbers back to records |
 | | `render-report` | Markdown report → standalone HTML (`--format pdf` adds an A4 PDF) |
 | Lineage | `lineage init` | Create the topic folder (`--no-lineage` for a plain review) |
-| | `lineage expand` | One-hop snowballing for a plain review: references and citing papers of a few seeds, ranked by seed links, screened papers hidden |
+| | `lineage expand` | One-hop snowballing for a plain review: references and citing papers of a few seeds, ranked by seed links, screened papers hidden; saves them as `data/corpus.json` for query tests |
 | | `lineage seed`, `collect`, `analyze` | Seed candidates, citation neighbourhood, RPYS / clusters / SPC main path |
 | | `lineage keywords`, `query-test`, `gold`, `log-search`, `mentions`, `adoption` | Build and test search vocabulary, freeze a gold set, log outside searches, count mentions and forward-only adoption |
 | | `lineage links`, `quality`, `check`, `page`, `report-section` | Journal-first links, source quality of the boxes (retracted, not peer-reviewed, unverified journal, off-field, where each was found), validation and layout warnings, interactive page (`--embed`), report chapter |
