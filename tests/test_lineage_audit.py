@@ -127,7 +127,8 @@ class DisputeTests(TopicFolder):
         self.assertFalse(any("backward in time" in w for w in page.warnings(L)))  # a dispute has no direction
         svg = page.svg(L, page.Links({}, {}))
         self.assertIn('class="e dis" data-s="f" data-t="s"', svg)
-        self.assertIn('<g class="e xm" data-s="f" data-t="s"><circle', svg)
+        # data-type added deliberately: the edge-type toggles (show/hide s, d, m, e, x) select on it
+        self.assertIn('<g class="e xm" data-s="f" data-t="s" data-type="x"><circle', svg)
         self.assertIn("≠", svg)
         self.assertIn(page.EDGE_KO["x"], svg)               # legend inside the SVG (lineage mode, no designs)
         self.assertNotIn("연구 설계", svg)

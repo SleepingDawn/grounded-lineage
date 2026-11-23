@@ -142,6 +142,8 @@ def size_tables(lines: list[str]) -> list[str]:
 
 IMAGE = re.compile(r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"([^\"]*)\")?\s*\)")
 INTERACTIVE = "interactive="
+HTML_SUFFIXES = {".html", ".htm"}
+FRAME_HEIGHT = 640  # px: an embedded page that never reports its height keeps this
 
 
 def _local(base_dir: Path, src: str) -> Path | None:
@@ -151,23 +153,75 @@ def _local(base_dir: Path, src: str) -> Path | None:
     return path if path.is_relative_to(base_dir) else None
 
 
-def _inline_frame(page: Path, caption: str) -> str:
-    """A self-contained interactive figure: the local HTML page inlined as an iframe srcdoc."""
+def _title_options(title: str) -> dict[str, str]:
+    """`"static=figs/x.png height=480"` -> {"static": ..., "height": ...} (space-separated key=value)."""
+    return dict(part.split("=", 1) for part in title.split() if "=" in part)
+
+
+# Parent side of the embed protocol, included with every interactive figure (it runs once). An
+# embedded page posts {type: "snu-embed-height", height} to size its frame; the report answers with
+# {type: "snu-embed-theme", theme: "light"|"dark", vars: {"--snu-ink": value, ...}} so the page
+# follows the report's light/dark mode (data-theme, Quarto's quarto-dark/-light body class, else the
+# page background, else prefers-color-scheme) and its colour and font tokens. Frames are sandboxed
+# without allow-same-origin, so messages are the only channel.
+EMBED_SCRIPT = r"""<script>(function(){if(window.__snuEmbed)return;window.__snuEmbed=1;
+var V=['--snu-ink','--snu-muted','--snu-rule','--snu-accent','--snu-head-bg','--snu-surface','--snu-font'];
+function lum(c){var m=/rgba?\(([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:[, /]+([\d.]+))?/.exec(c||'');
+if(!m||(m[4]!==undefined&&+m[4]===0))return null;return (0.2126*m[1]+0.7152*m[2]+0.0722*m[3])/255;}
+function theme(){var h=document.documentElement,b=document.body,t=h.getAttribute('data-theme')||(b&&b.getAttribute('data-theme'));
+if(t==='dark'||t==='light')return t;if(b&&b.classList.contains('quarto-dark'))return 'dark';
+if(b&&b.classList.contains('quarto-light'))return 'light';
+var l=b?lum(getComputedStyle(b).backgroundColor):null;if(l===null)l=lum(getComputedStyle(h).backgroundColor);
+if(l!==null)return l<0.45?'dark':'light';
+return window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}
+function vars(){var cs=getComputedStyle(document.documentElement),o={};V.forEach(function(k){o[k]=cs.getPropertyValue(k).trim();});
+if(!o['--snu-font']&&document.body)o['--snu-font']=getComputedStyle(document.body).fontFamily;return o;}
+function frames(){return Array.prototype.slice.call(document.querySelectorAll('iframe.snu-frame'));}
+function send(f){try{f.contentWindow.postMessage({type:'snu-embed-theme',theme:theme(),vars:vars()},'*');}catch(e){}}
+function all(){frames().forEach(send);}
+window.addEventListener('message',function(e){var d=e.data;if(!d||d.type!=='snu-embed-height')return;
+frames().forEach(function(f){if(f.contentWindow!==e.source)return;var h=Math.max(80,Math.min(+d.height||0,30000));
+f.style.height=Math.ceil(h)+'px';if(!f.__snuThemed){f.__snuThemed=1;send(f);}});});
+function hook(){frames().forEach(function(f){f.addEventListener('load',function(){send(f);});});all();}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook);else hook();
+if(window.matchMedia)matchMedia('(prefers-color-scheme: dark)').addEventListener('change',all);
+if(window.MutationObserver){var mo=new MutationObserver(all);
+mo.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','class']});
+var ob=function(){mo.observe(document.body,{attributes:true,attributeFilter:['data-theme','class']});};
+if(document.body)ob();else document.addEventListener('DOMContentLoaded',ob);}
+})();</script>"""
+
+
+def _inline_frame(page: Path, caption: str, auto: bool = False, height: int | None = None) -> str:
+    """A self-contained interactive figure: the local HTML page inlined as an iframe srcdoc.
+
+    auto: the page is an embed (a chart, or the lineage embed variant) whose frame height follows
+    its content through postMessage; until it reports, the frame keeps `height` (default 640 px).
+    Without auto (the old `interactive=` full page) the frame is a fixed 82vh window unless the
+    page reports a height itself.
+    """
     doc = html.escape(page.read_text(encoding="utf-8"), quote=True)
     cap = html.escape(caption, quote=True)
+    cls = "snu-frame" + (" snu-auto" if auto else "")
+    px = height or (FRAME_HEIGHT if auto else None)
+    style = f' style="height:{int(px)}px"' if px else ""
     # column-page: Quarto's layout class that lets a wide figure use the full page width.
-    return ("\n```{=html}\n<figure class=\"snu-interactive column-page\">"
-            f"<iframe srcdoc=\"{doc}\" title=\"{cap}\" loading=\"lazy\" "
+    return (f"\n```{{=html}}\n<figure class=\"snu-interactive column-page{' snu-embed' if auto else ''}\">"
+            f"<iframe class=\"{cls}\" srcdoc=\"{doc}\" title=\"{cap}\" loading=\"lazy\"{style} "
             "sandbox=\"allow-scripts allow-popups allow-popups-to-escape-sandbox\"></iframe>"
-            f"<figcaption>{html.escape(caption, quote=False)}</figcaption></figure>\n```\n")
+            f"<figcaption>{html.escape(caption, quote=False)}</figcaption></figure>{EMBED_SCRIPT}\n```\n")
 
 
 def prepare_body(lines: list[str], base_dir: Path, interactive: bool = False) -> tuple[list[str], list[str]]:
     """Make the body safe and Pandoc-ready: local images only, <sub>/<sup>/<br> as Markdown.
 
-    An image titled `"interactive=page.html"` (a local HTML page in the report folder) becomes
-    that page inlined as an interactive frame when `interactive` (the HTML output); otherwise
-    the static image is kept.
+    Interactive figures (inlined only when `interactive`, i.e. for the HTML output):
+    - `![caption](figs/chart.html)`: a local HTML page used as the image becomes an auto-sized
+      frame. Title options: `"static=figs/chart.png"` (the image the PDF shows; default: the same
+      path with .png, when that file exists) and `"height=480"` (frame height until the page
+      reports its own). Without a static image the PDF leaves the figure out, with a warning.
+    - `![caption](figs/lineage.png "interactive=page.html")`: the older form; the HTML output
+      inlines page.html, the PDF keeps the PNG.
     """
     base_dir = base_dir.resolve()
     warnings: list[str] = []
@@ -181,6 +235,18 @@ def prepare_body(lines: list[str], base_dir: Path, interactive: bool = False) ->
         if not path.is_relative_to(base_dir):
             warnings.append(f"image_skipped_outside_report_folder: {src}")
             return ""
+        if path.suffix.lower() in HTML_SUFFIXES and path.is_file():
+            opts = _title_options(title)
+            if interactive:
+                height = int(opts["height"]) if opts.get("height", "").isdigit() else None
+                return _inline_frame(path, alt, auto=True, height=height)
+            static = opts.get("static") or Path(src).with_suffix(".png").as_posix()
+            spath = _local(base_dir, static)
+            if spath is None or spath.suffix.lower() not in IMAGE_SUFFIXES or not spath.is_file():
+                warnings.append("interactive_figure_without_static_image (the PDF leaves it out; add "
+                                f"\"static=figs/x.png\"): {src}")
+                return ""
+            return f"![{alt}]({static})"
         if path.suffix.lower() not in IMAGE_SUFFIXES or not path.is_file():
             warnings.append(f"image_skipped_unsupported_or_missing (use PNG/JPG): {src}")
             return ""
@@ -189,7 +255,7 @@ def prepare_body(lines: list[str], base_dir: Path, interactive: bool = False) ->
         if interactive:
             target = title[len(INTERACTIVE):].strip()
             page = _local(base_dir, target)
-            if page is None or page.suffix.lower() not in {".html", ".htm"} or not page.is_file():
+            if page is None or page.suffix.lower() not in HTML_SUFFIXES or not page.is_file():
                 warnings.append(f"interactive_figure_skipped (local .html in the report folder): {target}")
             else:
                 return _inline_frame(page, alt)

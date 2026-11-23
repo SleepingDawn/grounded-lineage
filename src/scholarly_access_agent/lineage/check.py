@@ -1,7 +1,8 @@
 """Check lineage.json without rendering anything (fast; no browser, no network).
 
 Runs the same validation as `lineage page` / `lineage report-section` plus the layout warnings,
-including edges drawn through a third paper's box. Run it after every edit of lineage.json and
+including edges drawn through a third paper's box, and warns when a node's `evidence` stem has no
+readable evidence/<stem>.json. Run it after every edit of lineage.json and
 render the page and the figure once, at the end.
 
 Then, offline from the local corpus (audit.py): s edges without a citation link or a recorded basis,
@@ -16,7 +17,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .page import load, validate, warnings, width_budget
+from .page import load, missing_evidence, validate, warnings, width_budget
 
 
 def main(argv=None) -> int:
@@ -37,6 +38,8 @@ def main(argv=None) -> int:
     if not errs:
         for w in warnings(L):
             print("warning:", w)
+        for nid, stem in missing_evidence(L, Path(a.work_dir)):
+            print(f"warning: node {nid}: evidence/{stem}.json not found or unreadable (the panel falls back to the row level)")
         if not a.no_corpus:
             from .audit import audit
 

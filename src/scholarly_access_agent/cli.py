@@ -292,6 +292,12 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=False,
     )
     subcommands.add_parser(
+        "viz",
+        help="Vega-Lite charts from a topic folder as standalone HTML + .vl.json "
+             "(effects, matrix, novelty, adoption, timeline).",
+        add_help=False,
+    )
+    subcommands.add_parser(
         "resolve",
         help="DOI -> Crossref record, Unpaywall open copies and a ranked list of reading routes.",
         add_help=False,
@@ -527,6 +533,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from scholarly_access_agent.pack import main as pack_main
 
         return pack_main(argv[1:])
+    if argv[:1] == ["viz"]:
+        from scholarly_access_agent.viz import main as viz_main
+
+        return viz_main(argv[1:])
     if argv[:1] == ["resolve"]:
         from scholarly_access_agent.resolve import main as resolve_main
 

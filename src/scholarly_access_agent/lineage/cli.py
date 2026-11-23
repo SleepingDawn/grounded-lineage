@@ -21,8 +21,8 @@ COMMANDS = {
     "log-search": ("searchlog", "Log a search outside OpenAlex (web/arXiv/KCI) to data/searches.json."),
     "links": ("links", "Resolve journal-first links for OpenAlex IDs or a lineage.json."),
     "check": ("check", "Validate lineage.json; layout, edge citation-link, dispute and search warnings."),
-    "page": ("page", "Validate lineage.json and render the interactive lineage page."),
-    "report-section": ("report", "Write the lineage chapter (Markdown + PNG figure) for a PDF report."),
+    "page": ("page", "Validate lineage.json and render the interactive page (--embed: map-only embed variant)."),
+    "report-section": ("report", "Write the lineage chapter (Markdown, PNG figure, embed page) for a report."),
 }
 
 

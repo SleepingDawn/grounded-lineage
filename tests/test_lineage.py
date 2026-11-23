@@ -291,13 +291,20 @@ class PageAndReportTests(unittest.TestCase):
     def test_report_figure_points_the_html_report_at_the_clickable_page(self):
         from PIL import Image as PILImage
 
-        def fake_figure(L, links, path):
+        def fake_figure(L, links, path, ev=None):
             path.parent.mkdir(parents=True, exist_ok=True)
             PILImage.new("RGB", (8, 8)).save(path)
 
         rdir = self.root / "report"
         with quiet(), mock.patch.object(report, "render_figure", side_effect=fake_figure):
             self.assertEqual(report.main([str(self.root), "--report-dir", str(rdir), "--chapter", "3"]), 0)
+        md = (rdir / "lineage_section.md").read_text(encoding="utf-8")
+        # Changed deliberately: the HTML report now embeds the map's embed variant (auto-sized frame with the
+        # evidence panel) and the PDF takes the PNG named by "static="; --no-embed keeps the old form.
+        self.assertIn('(test_lineage_embed.html "static=figs/lineage.png")', md)
+        self.assertTrue((rdir / "test_lineage_embed.html").is_file())
+        with quiet(), mock.patch.object(report, "render_figure", side_effect=fake_figure):
+            self.assertEqual(report.main([str(self.root), "--report-dir", str(rdir), "--chapter", "3", "--no-embed"]), 0)
         md = (rdir / "lineage_section.md").read_text(encoding="utf-8")
         self.assertIn('(figs/lineage.png "interactive=test_lineage.html")', md)
 

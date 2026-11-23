@@ -1,21 +1,28 @@
 """Render an interactive lineage page from a curated lineage.json plus the analysis outputs.
 
 Usage:
-  lineage page WORK_DIR [--out page.html]
+  lineage page WORK_DIR [--out page.html] [--embed]
 WORK_DIR must contain lineage.json (agent-curated) and data/ (`lineage collect` + `lineage analyze` output).
 Optional: data/links.json (lineage links), data/keywords.json (lineage keywords),
-          data_x/ (expanded corpus from lineage collect --base data ...).
+          data_x/ (expanded corpus from lineage collect --base data ...),
+          evidence/<stem>.json (evidence records named by a node's `evidence` field: shown in the side panel).
 Checks the lineage.json against the schema and exits with a list of problems if it is invalid.
+--embed writes the embed variant (<slug>_embed.html): map, controls, legend and panel only, with a
+transparent background, for a report to show in an auto-sized frame (`![caption](<slug>_embed.html)`).
 
 Text fields accept **bold** only; everything else is escaped.
 """
 import argparse
 import json
+import os
 import re
 import sys
 from collections import Counter, defaultdict
 from html import escape
 from pathlib import Path
+
+from ..evidence import (LABEL_ABSTRACT, LABEL_BODY, LABEL_EXCERPTS, LABEL_NONE, LABEL_SECONDARY, derive_label,
+                        format_locator)
 
 LANE_W, X0, BOX_W, BOX_H, STACK, TOP = 132, 58, 120, 38, 46, 74
 BREAK_GAP = 8  # insert a "(시간 생략)" break when consecutive node years differ by more than this
@@ -36,6 +43,20 @@ Q_LANE_W, EV_LANE_W, X0_TOPIC, PILL_H = 156, 112, 64, 24
 PILL_W = EV_LANE_W - 14
 ANS_LH, ANS_PAD = 16, 11  # answer cell: line height, inner padding
 MAX_QUESTIONS = 5
+# Study-design colours: the Okabe–Ito colour-blind-safe set, the same in light and dark mode. Box text stays
+# in the ink colour on a 12% tint, so text contrast does not depend on these hues.
+DESIGN_COLORS = {"model": "#0072B2", "observational": "#009E73", "experiment": "#D55E00", "quasi": "#E69F00",
+                 "review": "#CC79A7"}
+DESIGN_TAG = {"model": "모", "observational": "관", "experiment": "실", "quasi": "준", "review": "리"}
+# Evidence badge in the box corner, by the derived read label (evidence.derive_label or the row level).
+BADGE = {LABEL_BODY: "full", LABEL_EXCERPTS: "half", LABEL_SECONDARY: "dash", LABEL_ABSTRACT: "ring", LABEL_NONE: None}
+BADGE_SHORT = {LABEL_BODY: "본문", LABEL_EXCERPTS: "발췌", LABEL_SECONDARY: "인용 맥락", LABEL_ABSTRACT: "초록",
+               LABEL_NONE: "미확인"}
+EDGE_SHORT = {"s": "직접 확장", "d": "개념 연결", "m": "주경로", "e": "사건 평가", "x": "상충"}
+LONG_SPAN = 15             # edges spanning more years than this can be drawn faint with a target label
+SHORTEN_NODES = 40         # "긴 연결 줄이기" is on by default above this many nodes
+STEM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")  # evidence file stem (no path parts)
+EMBED_SUFFIX = "_embed"
 
 
 def md(t):
@@ -135,6 +156,9 @@ def validate(L):
                         "(or 'unlinked': '<why no record was found>')")
         if n.get("design") is not None and n["design"] not in DESIGN_KO:
             errs.append(f"node {n.get('id')}: design '{n['design']}' must be one of {list(DESIGN_KO)}")
+        if n.get("evidence") is not None and not (isinstance(n["evidence"], str) and STEM_RE.match(n["evidence"])):
+            errs.append(f"node {n.get('id')}: evidence must be the stem of a file in evidence/ "
+                        "(\"larkin2014\" for evidence/larkin2014.json), without folder or .json")
         fields = (("title", PILL_W - 10, 11),) if ev else (("title", BOX_W - 8, 12), ("sub", BOX_W - 6, 10.5))
         for k, limit, size in fields:
             w = text_px(n.get(k, ""), size)
@@ -252,7 +276,7 @@ def warnings(L):
                      f"lane colour): {', '.join(nodesign)}")
     for n in L["nodes"]:
         if not is_event(n) and not n.get("openalex") and not n.get("url"):
-            w.append(f"node {n['id']} has no link (unlinked: {n.get('unlinked')}); its box is not clickable")
+            w.append(f"node {n['id']} has no link (unlinked: {n.get('unlinked')}); its panel has no 원문 열기 button")
     if len(L["nodes"]) > 40:
         w.append(f"{len(L['nodes'])} nodes (> 40): consider dropping minor ones")
     years = {n["id"]: n["year"] for n in L["nodes"]}
@@ -292,6 +316,119 @@ class Links:
             info = self.links.get(oa) or {}
             return info.get("url") or f"https://openalex.org/{oa}", info.get("kind", "unknown"), info
         return url, "unknown", {}
+
+
+# ---------------------------------------------------------------- evidence (panel and badges)
+def _text(v, limit=None):
+    s = "" if v is None else " ".join(str(v).split())
+    return s if limit is None or len(s) <= limit else s[: limit - 1].rstrip() + "…"
+
+
+def slim_record(rec, stem):
+    """The part of an evidence record the side panel shows: bibliographic lines, how it was read
+    (access, read_via, version, venue_type, derived label), criterion judgments with their locators and
+    read_mode, and structured results with units and pages."""
+    lab = derive_label(rec)
+    authors = rec.get("authors")
+    if isinstance(authors, list):
+        names = [_text(a.get("name") if isinstance(a, dict) else a) for a in authors]
+        authors = ", ".join(names[:3]) + (" 외" if len(names) > 3 else "")
+    crit = []
+    for c in rec.get("criteria") or []:
+        if not isinstance(c, dict):
+            continue
+        at = [{"loc": format_locator(e), "m": _text(e.get("read_mode"))}
+              for e in c.get("evidence") or [] if isinstance(e, dict)]
+        crit.append({"c": _text(c.get("criterion"), 120), "j": _text(c.get("judgment"), 900),
+                     "at": [a for a in at if a["loc"] or a["m"]]})
+    res = []
+    for r in rec.get("results") or []:
+        if not isinstance(r, dict):
+            continue
+        v = r.get("value")
+        rng = f" ({r['lo']}–{r['hi']})" if r.get("lo") is not None and r.get("hi") is not None else ""
+        res.append({"q": _text(r.get("quantity"), 120), "v": ("" if v is None else _text(v)) + rng,
+                    "u": _text(r.get("unit")), "cond": _text(r.get("condition"), 120), "at": format_locator(r),
+                    "m": _text(r.get("read_mode"))})
+    return {"stem": stem, "title": _text(rec.get("title"), 300), "by": _text(authors, 200), "year": rec.get("year"),
+            "venue": _text(rec.get("venue"), 200), "version": _text(rec.get("version"), 160),
+            "access": _text(rec.get("access")), "read_via": _text(rec.get("read_via")),
+            "venue_type": _text(rec.get("venue_type")), "label": lab["label"], "at": lab["locator"],
+            "basis": lab["basis"], "crit": crit, "res": res}
+
+
+def evidence_path(work, stem):
+    return Path(work) / "evidence" / f"{stem}.json"
+
+
+def node_evidence(L, work):
+    """{node id: slim evidence record} for nodes whose `evidence` stem names a readable evidence/<stem>.json
+    in the topic folder. Nodes without one fall back to their `rows` level."""
+    out = {}
+    if work is None:
+        return out
+    for n in L.get("nodes", []):
+        stem = n.get("evidence")
+        if not isinstance(stem, str) or not STEM_RE.match(stem):
+            continue
+        p = evidence_path(work, stem)
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
+        except (OSError, ValueError):
+            rec = None
+        if isinstance(rec, dict):
+            out[n["id"]] = slim_record(rec, stem)
+    return out
+
+
+def missing_evidence(L, work):
+    """Node `evidence` stems with no readable evidence/<stem>.json (warnings for check and page)."""
+    have = node_evidence(L, work)
+    return [(n["id"], n["evidence"]) for n in L.get("nodes", [])
+            if isinstance(n.get("evidence"), str) and n["id"] not in have]
+
+
+def node_labels(L, ev=None):
+    """{study node id: derived read label}: from the node's evidence record when present, else the strongest
+    level among its rows, else 미확인."""
+    ev = ev or {}
+    levels = node_levels(L)
+    out = {}
+    for n in L["nodes"]:
+        if is_event(n):
+            continue
+        if n["id"] in ev:
+            out[n["id"]] = ev[n["id"]]["label"]
+        else:
+            lv = best_level(levels.get(n["id"]))
+            out[n["id"]] = LEVEL_KO[lv] if lv else LABEL_NONE
+    return out
+
+
+def badge_svg(kind, cx, cy, r=4.5):
+    """Evidence badge: filled dot (본문), half dot (발췌), dashed ring (인용 맥락), hollow ring (초록)."""
+    if not kind:
+        return ""
+    if kind == "half":
+        return (f'<circle cx="{cx}" cy="{cy}" r="{r}" class="bdg"/>'
+                f'<path d="M{cx},{cy - r} A{r},{r} 0 0 0 {cx},{cy + r} Z" class="bdg-h"/>')
+    return f'<circle cx="{cx}" cy="{cy}" r="{r}" class="bdg {kind}"/>'
+
+
+def label_counts(labels):
+    c = Counter(labels.values())
+    return [(BADGE_SHORT[k], c.get(k, 0)) for k in (LABEL_BODY, LABEL_EXCERPTS, LABEL_SECONDARY, LABEL_ABSTRACT,
+                                                     LABEL_NONE)]
+
+
+def figure_footer(L, labels, ev):
+    """One line under the figure: date, how each study was read, source."""
+    m = L.get("meta") or {}
+    src = m.get("figure_source") or ("OpenAlex 서지·인용" + (" + evidence/ 원문 기록" if ev else "")
+                                     + (" + 근거 표(rows)" if L.get("rows") else ""))
+    counts = " · ".join(f"{k} {v}" for k, v in label_counts(labels))
+    date = f'{m["date"]} 기준 · ' if m.get("date") else ""
+    return f"{date}연구 {len(labels)}편 근거 수준: {counts} · 출처: {src}"
 
 
 # ---------------------------------------------------------------- diagram
@@ -446,14 +583,14 @@ def edges_through_boxes(L, samples=40, margin=3):
     return hits
 
 
-def svg_legend(L, W, y0):
-    """Legend drawn inside the SVG (so the report PNG carries it): study designs, and in topic mode the edge
-    types and the answer cell. Returns (svg fragments, height)."""
+def svg_legend(L, W, y0, labels=None):
+    """Legend drawn inside the SVG (so the report PNG carries it): study designs, evidence badges, and in
+    topic mode the edge types and the answer cell. Returns (svg fragments, height)."""
     topic = mode(L) == "topic"
     used = {n.get("design") for n in L["nodes"]}
     items = [("head", "연구 설계")] + [("design", d) for d in DESIGN_KO if topic or d in used]
     if not topic and not used - {None}:
-        items = []  # lineage mode without designs: the legend only explains the dispute line
+        items = []  # lineage mode without designs: the legend explains the dispute line and the badges
     if topic:
         types = [t for t in ("s", "d", "m", "e", "x") if any(e[2] == t for e in edge_list(L))]
         if types:
@@ -462,10 +599,23 @@ def svg_legend(L, W, y0):
             items += [("answer", "")]
     elif any(t == "x" for _, _, t in edge_list(L)):
         items += [("head", "연결선"), ("edge", "x")]
+    if labels and any(BADGE.get(v) for v in labels.values()):
+        items += [("head", "근거 수준")] + [("badge", k) for k in BADGE]
     o, x, y = [], 10, y0 + 20
     for kind, key in items:
         label = {"head": key, "design": DESIGN_KO.get(key, ""), "edge": EDGE_KO.get(key, ""),
-                 "answer": "지금의 답 (각 질문 열의 끝)"}[kind]
+                 "answer": "지금의 답 (각 질문 열의 끝)",
+                 "badge": key if BADGE.get(key) else f"{key} (표시 없음)"}[kind]
+        if kind == "badge":
+            lw = text_px(label, 11.5 * 0.92)
+            iw = lw + 16 + 14
+            if x + iw > W - 8 and x > 10:
+                x, y = 10, y + 22
+            if BADGE.get(key):
+                o.append(badge_svg(BADGE[key], x + 5, y - 4))
+            o.append(f'<text x="{x + 16}" y="{y}" class="lg">{escape(label)}</text>')
+            x += iw
+            continue
         lw = text_px(label, 11.5 * 0.92)
         iw = lw + (8 if kind == "head" else 30) + 14
         if x + iw > W - 8 and x > 10:
@@ -475,8 +625,9 @@ def svg_legend(L, W, y0):
             x += lw + 12
             continue
         if kind == "design":
-            o.append(f'<rect x="{x}" y="{y-10}" width="22" height="12" rx="3" '
-                     f'style="fill:color-mix(in srgb, var(--d-{key}) 12%, var(--surface));stroke:var(--d-{key})" stroke-width="1.3"/>')
+            o.append(f'<rect x="{x}" y="{y-11}" width="22" height="14" rx="3" '
+                     f'style="fill:color-mix(in srgb, var(--d-{key}) 12%, var(--surface));stroke:var(--d-{key})" stroke-width="1.3"/>'
+                     f'<text x="{x + 11}" y="{y - 4}" class="dt">{DESIGN_TAG[key]}</text>')
         elif kind == "edge":
             st = {"s": "stroke:var(--edge)", "d": "stroke:var(--edge)", "m": "stroke:var(--accent)",
                   "e": "stroke:var(--muted)", "x": "stroke:var(--dispute)"}[key]
@@ -493,19 +644,65 @@ def svg_legend(L, W, y0):
     return o, y - y0 + 14
 
 
-def svg(L, links):
+def long_edges(L):
+    """{(source, target)} of edges spanning more than LONG_SPAN years."""
+    years = {n["id"]: n["year"] for n in L["nodes"]}
+    return {(s, t) for s, t, _ in edge_list(L) if s in years and t in years and abs(years[t] - years[s]) > LONG_SPAN}
+
+
+def shorten_default(L):
+    """"긴 연결 줄이기" starts on for large maps."""
+    return len(L["nodes"]) > SHORTEN_NODES
+
+
+def edge_label_at(p0, c1, k, W, text):
+    """(x, y, anchor) of the small target label at the start of a long edge; k = how many long edges already
+    leave the same point (alternating right/left of the line, then further down)."""
+    tw = text_px(text, 9.5)
+    (x0, y0), (x1, y1) = p0, c1
+    if abs(x1 - x0) < 0.5 and y1 > y0:  # leaves the box bottom going down
+        right = k % 2 == 0
+        x, y = (x0 + 5 if right else x0 - 5), y0 + 11 + 11 * (k // 2)
+    else:
+        right = x1 >= x0
+        x, y = (x0 + 4 if right else x0 - 4), y0 - 4 - 11 * k
+    anchor = "start" if right else "end"
+    if right and x + tw > W - 2:
+        x, anchor = x - 9, "end"
+    elif not right and x - tw < 2:
+        x, anchor = x + 9, "start"
+    return round(x, 1), round(y, 1), anchor
+
+
+def node_label_text(n):
+    return n["title"] if is_event(n) else (n.get("sub") or n["title"])
+
+
+def svg(L, links, ev=None, footer=True):
+    """The map as one SVG: lane bands, year rows, edges, boxes (design tag and evidence badge in the corners),
+    then the header and year groups (drawn last so they can stick while the map scrolls), legend and footer.
+    `ev`: node_evidence() output; without it badges come from the rows."""
     lanes, nodes = L["lanes"], L["nodes"]
     geo = Geo(L)
     topic = geo.topic
     pos, rows, H = layout(L, geo)
     W = geo.width
+    labels = node_labels(L, ev)
     legend, lh = ([], 0)
-    if topic or any(n.get("design") for n in nodes) or any(t == "x" for _, _, t in edge_list(L)):
-        legend, lh = svg_legend(L, W, H)
+    if (topic or any(n.get("design") for n in nodes) or any(t == "x" for _, _, t in edge_list(L))
+            or any(BADGE.get(v) for v in labels.values())):
+        legend, lh = svg_legend(L, W, H, labels)
+    foot, fh = [], 0
+    if footer and labels:
+        lines = wrap(figure_footer(L, labels, ev), W - 20, 10.5)
+        foot = [f'<text x="10" y="{H + lh + 16 + 15 * j}" class="foot">{escape(t)}</text>' for j, t in enumerate(lines)]
+        fh = 10 + 15 * len(lines)
     has_e = any(e[2] == "e" for e in edge_list(L))
-    aria = ("질문 지도: 열은 독자의 질문, 맨 왼쪽 띠는 정책·사건, 행은 연도. 상자를 누르면 원문이 열립니다" if topic
-            else "계보도: 열은 계열, 행은 연도. 상자를 누르면 원문이 열립니다")
-    o = [f'<svg id="tree" viewBox="0 0 {W} {H + lh}" width="{W}" height="{H + lh}" role="group" '
+    aria = ("질문 지도: 열은 독자의 질문, 맨 왼쪽 띠는 정책·사건, 행은 연도. 상자를 누르면 근거 패널이 열립니다" if topic
+            else "계보도: 열은 계열, 행은 연도. 상자를 누르면 근거 패널이 열립니다")
+    total = H + lh + fh
+    cls = ' class="shorten"' if shorten_default(L) else ""
+    o = [f'<svg id="tree"{cls} viewBox="0 0 {W} {total}" width="{W}" height="{total}" role="group" '
          f'aria-label="{aria}" xmlns="http://www.w3.org/2000/svg">',
          '<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
          '<path d="M0,0 L10,5 L0,10 z" style="fill:var(--edge)"/></marker>'
@@ -515,32 +712,38 @@ def svg(L, links):
             '<path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker>' if has_e else "")
          + '</defs>']
     qn = question_numbers(L)
+    heads = [f'<rect x="0" y="0" width="{geo.x0}" height="{geo.top - 1}" style="fill:var(--surface)"/>']
     for k, i in enumerate(geo.order):
         ln = lanes[i]
         x, w = geo.x[i], geo.w[i]
         if k % 2 == 0:
             o.append(f'<rect x="{x}" y="0" width="{w}" height="{H}" style="fill:var(--band)"/>')
+        heads.append(f'<rect x="{x}" y="0" width="{w}" height="{geo.top - 1}" '
+                     f'style="fill:var(--{"band" if k % 2 == 0 else "surface"})"/>')
         cx = x + w / 2
-        o.append(f'<rect x="{x+10}" y="12" width="{w-20}" height="4" rx="2" style="fill:var(--c{i})"/>')
+        heads.append(f'<rect x="{x+10}" y="12" width="{w-20}" height="4" rx="2" style="fill:var(--c{i})"/>')
         if topic:
             if i in qn:
-                o.append(f'<text x="{cx}" y="32" class="qn">Q{qn[i]}</text>')
-            o.extend(f'<text x="{cx}" y="{50 + 16 * j}" class="lt">{escape(line)}</text>'
-                     for j, line in enumerate(geo.head[i]))
+                heads.append(f'<text x="{cx}" y="32" class="qn">Q{qn[i]}</text>')
+            heads.extend(f'<text x="{cx}" y="{50 + 16 * j}" class="lt">{escape(line)}</text>'
+                         for j, line in enumerate(geo.head[i]))
             continue
         label = ln.get("label") or "정책·사건"
         l1, l2 = (label + ["", ""])[:2] if isinstance(label, list) else (label, "")
-        o.append(f'<text x="{cx}" y="36" class="lt">{escape(l1)}</text><text x="{cx}" y="52" class="lt">{escape(l2)}</text>')
+        heads.append(f'<text x="{cx}" y="36" class="lt">{escape(l1)}</text><text x="{cx}" y="52" class="lt">{escape(l2)}</text>')
+    heads.append(f'<line x1="0" x2="{W}" y1="{geo.top - 1}" y2="{geo.top - 1}" class="hline"/>')
+    years = [f'<rect x="0" y="0" width="{geo.x0 - 4}" height="{H}" class="yrbg"/>']
     ans = answer_lines(L, geo)
     for r in rows:
         if r[0] == "break":
             y = r[1] + 13
-            o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="brk"/><text x="8" y="{y-4}" class="yr sm">(시간 생략)</text>')
+            o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="brk"/>')
+            years.append(f'<text x="8" y="{y-4}" class="yr sm">(시간 생략)</text>')
             continue
         yr, y, h = r
         if yr == "answer":
-            o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="sep"/>'
-                     f'<text x="8" y="{y+30}" class="yr">지금의</text><text x="8" y="{y+47}" class="yr">답</text>')
+            o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="sep"/>')
+            years.append(f'<text x="8" y="{y+30}" class="yr">지금의</text><text x="8" y="{y+47}" class="yr">답</text>')
             ch = h - 18
             for i, lines in ans.items():
                 ax, aw = geo.x[i] + 6, geo.w[i] - 12
@@ -550,63 +753,96 @@ def svg(L, links):
                 o.append(f'<g class="ans" data-lane="{i}"><rect x="{ax}" y="{y+9}" width="{aw}" height="{ch}" rx="8" '
                          f'class="ansbox"/>{text}</g>')
             continue
-        o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="sep"/><text x="8" y="{y+28}" class="yr">{yr}</text>')
+        o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="sep"/>')
+        years.append(f'<text x="8" y="{y+28}" class="yr">{yr}</text>')
+    by = {n["id"]: n for n in nodes}
+    long = long_edges(L)
+    starts = Counter()
+    elabels = []
     for s, t, st, (p0, c1, c2, p3) in edge_geometry(L, pos):
         d = f"M{p0[0]},{p0[1]} C{c1[0]},{c1[1]} {c2[0]},{c2[1]} {p3[0]},{p3[1]}"
+        lg = " long" if (s, t) in long else ""
         if st == "x":  # dispute: no direction, so no arrowhead; a ringed ≠ sits at the curve's midpoint
             mx, my = bezier(p0, c1, c2, p3, 0.5)
-            o.append(f'<path d="{d}" class="e dis" data-s="{s}" data-t="{t}"/>')
-            o.append(f'<g class="e xm" data-s="{s}" data-t="{t}">{xmark(mx, my, 7)}</g>')
-            continue
-        cls = {"s": "e", "d": "e dash", "m": "e main", "e": "e ev"}[st]
-        marker = {"m": "arm", "e": "are"}.get(st, "ar")
-        o.append(f'<path d="{d}" class="{cls}" data-s="{s}" data-t="{t}" marker-end="url(#{marker})"/>')
+            o.append(f'<path d="{d}" class="e dis{lg}" data-s="{s}" data-t="{t}" data-type="x"/>')
+            o.append(f'<g class="e xm{lg}" data-s="{s}" data-t="{t}" data-type="x">{xmark(mx, my, 7)}</g>')
+        else:
+            cls = {"s": "e", "d": "e dash", "m": "e main", "e": "e ev"}[st]
+            marker = {"m": "arm", "e": "are"}.get(st, "ar")
+            o.append(f'<path d="{d}" class="{cls}{lg}" data-s="{s}" data-t="{t}" data-type="{st}" '
+                     f'marker-end="url(#{marker})"/>')
+        if lg:
+            text = "→ " + node_label_text(by[t])
+            key = (round(p0[0]), round(p0[1]))
+            lx, ly, anchor = edge_label_at(p0, c1, starts[key], W, text)
+            starts[key] += 1
+            elabels.append(f'<text x="{lx}" y="{ly}" class="elab" text-anchor="{anchor}" data-s="{s}" data-t="{t}" '
+                           f'data-type="{st}">{escape(text)}</text>')
+    o.extend(elabels)
     for n in nodes:
         cx, y = pos[n["id"]]
         x = cx - BOX_W / 2
         url, kind, info = links.of(n.get("openalex"), n.get("url"))
         lane = n["lane"]
+        marks = ""
         if is_event(n):
-            bx, by, bw, bh = box_of(n, pos)
-            label = f'{n["title"]} ({n["year"]})' + (". 새 탭에서 출처 열기" if url else "")
-            inner = (f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" rx="{bh / 2}" '
+            bx, by_, bw, bh = box_of(n, pos)
+            label = f'{n["title"]} ({n["year"]}). 눌러서 자세히 보기'
+            inner = (f'<rect x="{bx}" y="{by_}" width="{bw}" height="{bh}" rx="{bh / 2}" '
                      f'style="fill:color-mix(in srgb, var(--c{lane}) 16%, var(--surface));stroke:var(--c{lane})"/>'
-                     f'<text x="{cx}" y="{by + 16}" class="et">{escape(n["title"])}</text>')
+                     f'<text x="{cx}" y="{by_ + 16}" class="et">{escape(n["title"])}</text>')
             cls = "node ev"
         else:
-            label = (f'{n["title"]}, {n["sub"]}. {info.get("venue") or ""}. 새 탭에서 원문 열기' if url
-                     else f'{n["title"]}, {n["sub"]}. 연결된 원문 없음')
+            lab = labels.get(n["id"]) or LABEL_NONE
+            label = (f'{n["title"]}, {n["sub"]}. {info.get("venue") or ""}. 근거 수준: {lab}. 눌러서 근거 패널 열기'
+                     + ("" if url else ". 연결된 원문 없음"))
             cls = "node" + (" key" if n.get("key") else "") + (" pre" if kind == "preprint" else "")
             col = f"var(--d-{n['design']})" if n.get("design") in DESIGN_KO else f"var(--c{lane})"
             inner = (f'<rect x="{x}" y="{y}" width="{BOX_W}" height="{BOX_H}" rx="6" '
                      f'style="fill:color-mix(in srgb, {col} {26 if n.get("key") else 12}%, var(--surface));stroke:{col}"/>'
                      f'<text x="{cx}" y="{y+16}" class="nt">{escape(n["title"])}</text>'
                      f'<text x="{cx}" y="{y+30}" class="ns">{escape(n["sub"])}</text>')
+            if n.get("design") in DESIGN_KO:
+                marks += (f'<rect x="{x - 5}" y="{y - 6}" width="13" height="12" rx="3" class="dtag" style="stroke:{col}"/>'
+                          f'<text x="{x + 1.5}" y="{y}" class="dt">{DESIGN_TAG[n["design"]]}</text>')
+            marks += badge_svg(BADGE.get(lab), x + BOX_W, y)
         dz = f' data-design="{escape(n["design"])}"' if n.get("design") in DESIGN_KO else ""
         attrs = f'class="{cls}" data-id="{escape(n["id"])}" data-lane="{lane}"{dz} aria-label="{escape(label)}"'
-        if url:
-            o.append(f'<a href="{escape(url)}" target="_blank" rel="noopener" {attrs}>{inner}</a>')
-        else:
-            o.append(f'<g tabindex="0" {attrs}>{inner}</g>')
+        o.append(f'<g tabindex="0" {attrs} role="button">{inner}{marks}</g>')
+    o.append('<g class="yrs">' + "".join(years) + "</g>")
+    o.append(f'<g class="heads" data-top="{geo.top}" data-max="{max(0, H - geo.top - 60)}">' + "".join(heads) + "</g>")
     o.extend(legend)
+    o.extend(foot)
     o.append("</svg>")
     return "\n".join(o)
 
 
-def node_data(L, links):
+def node_data(L, links, ev=None):
+    """Per-node data for the tooltip and the side panel: link, bibliographic lines, derived read label and,
+    when the node names an evidence record, its slim copy (`rec`)."""
+    ev = ev or {}
+    labels = node_labels(L, ev)
     out = {}
     for n in L["nodes"]:
         url, kind, info = links.of(n.get("openalex"), n.get("url"))
         fa, na = info.get("first_author") or "", info.get("n_authors") or 1
         d = {"t": info.get("title") or n["title"], "lane": n["lane"], "note": n.get("note", ""),
              "kind": kind, "venue": info.get("venue") or "", "year": info.get("year") or n["year"],
-             "cites": info.get("cites"), "by": (fa + (" 외" if na > 1 else "")) if fa else n.get("sub", "")}
+             "cites": info.get("cites"), "by": (fa + (" 외" if na > 1 else "")) if fa else n.get("sub", ""),
+             "box": n["title"], "sub": n.get("sub", ""), "y": n["year"]}
         if n.get("design") in DESIGN_KO:
             d["dz"] = DESIGN_KO[n["design"]]
+            d["dk"] = n["design"]
         if is_event(n):
             d["ev"] = True
-        if not url:
+        else:
+            d["lab"] = labels.get(n["id"]) or LABEL_NONE
+        if url:
+            d["u"] = url
+        else:
             d["nolink"] = True
+        if n["id"] in ev:
+            d["rec"] = ev[n["id"]]
         out[n["id"]] = d
     return out
 
@@ -969,6 +1205,34 @@ def lane_buttons(L):
     return "".join(b)
 
 
+def edge_swatch(t):
+    """Small line sample of an edge type for the toggle buttons."""
+    st = {"s": "var(--edge)", "d": "var(--edge)", "m": "var(--accent)", "e": "var(--muted)", "x": "var(--dispute)"}[t]
+    dash = {"d": ' stroke-dasharray="4 3"', "e": ' stroke-dasharray="1.5 3"', "x": f' stroke-dasharray="{X_DASH}"'}.get(t, "")
+    return (f'<svg width="22" height="8" aria-hidden="true"><line x1="1" x2="21" y1="4" y2="4" style="stroke:{st}" '
+            f'stroke-width="{2.4 if t == "m" else 1.6}"{dash}/></svg>')
+
+
+def view_controls(L):
+    """Edge-type toggles (only the types in use), 긴 연결 줄이기 and 화면 맞춤."""
+    types = [t for t in ("s", "d", "m", "e", "x") if any(e[2] == t for e in edge_list(L))]
+    b = [f'<button type="button" class="lanebtn edgebtn" data-etype="{t}" aria-pressed="true" '
+         f'title="{escape(EDGE_KO[t])} 보이기/숨기기">{edge_swatch(t)}{EDGE_SHORT[t]}</button>' for t in types]
+    if long_edges(L):
+        b.append(f'<button type="button" class="lanebtn optbtn" id="shortbtn" aria-pressed="{str(shorten_default(L)).lower()}" '
+                 f'title="{LONG_SPAN}년 넘게 이어지는 연결을 흐리게 그리고 시작점에 대상 이름을 붙임">긴 연결 줄이기</button>')
+    b.append('<button type="button" class="lanebtn optbtn" id="fitbtn" aria-pressed="false" '
+             'title="지도를 화면 너비에 맞춰 줄이기">화면 맞춤</button>')
+    return ('<div class="controls" role="group" aria-label="연결선과 보기"><span class="lab">연결선</span>'
+            + "".join(b) + "</div>")
+
+
+PANEL = ('<aside class="panel" id="panel" role="dialog" aria-modal="false" aria-labelledby="pt" hidden>'
+         '<div class="ph"><div class="pk" id="pk"></div>'
+         '<button type="button" class="px" id="px" aria-label="패널 닫기">×</button></div>'
+         '<h3 class="pt" id="pt" tabindex="-1"></h3><div class="pb" id="pb"></div></aside>')
+
+
 def legend_x(L):
     """HTML legend item for dispute edges, only when the tree has one."""
     if not any(t == "x" for _, _, t in edge_list(L)):
@@ -995,32 +1259,100 @@ def legend_line(style):
 ASSETS = Path(__file__).with_name("assets")
 
 
-def assets(L, links):
-    css = (ASSETS / "page.css").read_text(encoding="utf-8")
+def palette_css():
+    """Design colour tokens (Okabe–Ito), identical in light and dark mode."""
+    return ":root{" + "".join(f"--d-{k}:{v};" for k, v in DESIGN_COLORS.items()) + "}\n"
+
+
+def base_css(L):
+    """Stylesheet shared by the page, the embed variant and the report figure."""
+    css = (ASSETS / "page.css").read_text(encoding="utf-8") + palette_css()
     if has_disputes(L):
         css += DISPUTE_CSS
+    return css
+
+
+EMBED_CSS = """
+html,body{background:transparent!important}
+body{padding:2px 0 6px;font-size:14px}
+.wrap.embed{max-width:none;gap:10px}
+.embed .controls{margin-bottom:0}
+"""
+
+
+def assets(L, links, ev=None, embed=False, evbase="evidence/"):
+    css = base_css(L) + (EMBED_CSS if embed else "")
     js = (ASSETS / "page.js").read_text(encoding="utf-8")
-    js = (js.replace("__NODES__", json.dumps(node_data(L, links), ensure_ascii=False))
+    answers = {i: ln["answer"] for i, ln in enumerate(L["lanes"]) if ln.get("answer")}
+    qn = question_numbers(L) if mode(L) == "topic" else {}
+    cfg = {"embed": embed, "evbase": evbase, "badge": BADGE, "answers": answers, "qn": qn,
+           "design": DESIGN_TAG}
+    js = (js.replace("__NODES__", json.dumps(node_data(L, links, ev), ensure_ascii=False))
             .replace("__EDGES__", json.dumps([[s, t] for s, t, _ in edge_list(L)]))
             .replace("__LANES__", json.dumps([lane_name(l) for l in L["lanes"]], ensure_ascii=False))
-            .replace("__KIND__", json.dumps(KIND_KO, ensure_ascii=False))).replace("</", "<\\/")
+            .replace("__KIND__", json.dumps(KIND_KO, ensure_ascii=False))
+            .replace("__CFG__", json.dumps(cfg, ensure_ascii=False))).replace("</", "<\\/")
     return css, js
 
 
-def page(L, work, data, xdata, links):
-    if mode(L) == "topic":
-        return topic_page(L, work, data, xdata, links)
-    css, js = assets(L, links)
-    m = L["meta"]
-    n_pre = sum(1 for n in L["nodes"] if links.of(n.get("openalex"), n.get("url"))[1] == "preprint")
-    seeds = " ".join(m.get("seed_ids", [])) or "W..."
-    limits = "".join(f"<li>{md(x)}</li>" for x in L.get("limits", []))
-    return f"""<meta charset="utf-8">
-<title>{escape(m["page_title"])}</title>
+HEAD = """<meta charset="utf-8">
+<title>{title}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
-<style>{css}</style>
+<style>{css}</style>"""
+
+
+def map_block(L, links, ev):
+    """Controls, the map stage (SVG, tooltip, side panel)."""
+    topic = mode(L) == "topic"
+    lab = "질문 강조" if topic else "계열 강조"
+    return (f'<div class="controls" role="group" aria-label="{lab}"><span class="lab">{lab}</span>{lane_buttons(L)}</div>\n'
+            f'  {view_controls(L)}\n'
+            f'  <div class="stage" id="stage"><div class="scroll">{svg(L, links, ev)}</div>'
+            f'<div class="tip" id="tip" hidden></div>{PANEL}</div>')
+
+
+def lineage_legend(L, n_pre):
+    return (f'<div class="legend"><span>{legend_line("s")}직접 확장·변형</span><span>{legend_line("d")}개념적 연결</span>'
+            f'<span>{legend_line("m")}인용 네트워크 주경로 (SPC)</span>{legend_x(L)}\n'
+            f'  <span><svg width="26" height="14" aria-hidden="true"><rect x="1" y="1" width="24" height="12" rx="3" '
+            f'style="fill:none;stroke:var(--muted)" stroke-dasharray="4 2"/></svg>저널판 없음 (프리프린트 {n_pre}편)</span></div>')
+
+
+def preprint_legend(n_pre):
+    return (f'<div class="legend"><span><svg width="26" height="14" aria-hidden="true"><rect x="1" y="1" width="24" '
+            f'height="12" rx="3" style="fill:none;stroke:var(--muted)" stroke-dasharray="4 2"/></svg>'
+            f'저널판 없음 (프리프린트 {n_pre}편)</span></div>') if n_pre else ""
+
+
+def n_preprints(L, links):
+    return sum(1 for n in L["nodes"] if links.of(n.get("openalex"), n.get("url"))[1] == "preprint")
+
+
+def embed_page(L, links, ev=None, evbase="evidence/"):
+    """Embed variant: map, lane/edge controls, legend and panel only; transparent background; posts its
+    height to the parent frame and takes the parent's light/dark theme and report colour tokens."""
+    css, js = assets(L, links, ev, embed=True, evbase=evbase)
+    n_pre = n_preprints(L, links)
+    legend = preprint_legend(n_pre) if mode(L) == "topic" else lineage_legend(L, n_pre)
+    return (HEAD.format(title=escape(L["meta"]["page_title"]), css=css)
+            + f'\n<div class="wrap embed" id="wrap" data-snu-embed="1">\n  {map_block(L, links, ev)}\n  {legend}\n</div>\n'
+            f"<script>{js}</script>\n")
+
+
+def page(L, work, data, xdata, links, ev=None, evbase="evidence/"):
+    if ev is None:
+        ev = node_evidence(L, work)
+    if mode(L) == "topic":
+        return topic_page(L, work, data, xdata, links, ev, evbase)
+    css, js = assets(L, links, ev, evbase=evbase)
+    m = L["meta"]
+    n_pre = n_preprints(L, links)
+    seeds = " ".join(m.get("seed_ids", [])) or "W..."
+    limits = "".join(f"<li>{md(x)}</li>" for x in L.get("limits", []))
+    return HEAD.format(title=escape(m["page_title"]), css=css) + f"""
 <div class="wrap">
 <header class="col">
   <div class="eyebrow">선행연구 계보 · {escape(m.get("date", ""))} 기준</div>
@@ -1030,11 +1362,9 @@ def page(L, work, data, xdata, links):
 </header>
 <section>
   <div class="col"><h2>계보도</h2>
-  <p>열은 계열, 행은 연도입니다(연도 간격은 등간격이 아님). 상자에 마우스를 올리면 그 논문의 조상과 후손 줄기만 남고 요약이 뜹니다. <b>상자를 누르면 원문이 새 탭에서 열립니다.</b> 저널판이 있으면 저널판으로, 없으면 프리프린트로 연결됩니다.</p></div>
-  <div class="controls" role="group" aria-label="계열 강조"><span class="lab">계열 강조</span>{lane_buttons(L)}</div>
-  <div class="stage" id="stage"><div class="scroll">{svg(L, links)}</div><div class="tip" id="tip" hidden></div></div>
-  <div class="legend"><span>{legend_line("s")}직접 확장·변형</span><span>{legend_line("d")}개념적 연결</span><span>{legend_line("m")}인용 네트워크 주경로 (SPC)</span>{legend_x(L)}
-  <span><svg width="26" height="14" aria-hidden="true"><rect x="1" y="1" width="24" height="12" rx="3" style="fill:none;stroke:var(--muted)" stroke-dasharray="4 2"/></svg>저널판 없음 (프리프린트 {n_pre}편)</span></div>
+  <p>열은 계열, 행은 연도입니다(연도 간격은 등간격이 아님). 상자에 마우스를 올리면 그 논문의 조상과 후손 줄기만 남고 요약이 뜹니다. <b>상자를 누르면(또는 Enter) 근거 패널이 열리고</b>, 패널에서 원문(저널판이 있으면 저널판, 없으면 프리프린트)과 근거 기록을 엽니다. 상자 모서리의 점은 근거 수준, 글자는 연구 설계입니다.</p></div>
+  {map_block(L, links, ev)}
+  {lineage_legend(L, n_pre)}
 </section>
 <section class="col"><h2>갈라진 지점</h2>{axes(L)}</section>
 <section><div class="col"><h2>단계별 흐름</h2></div>{stage_table(L)}</section>
@@ -1067,21 +1397,17 @@ scholarly-access-agent lineage page .</pre>
 """
 
 
-def topic_page(L, work, data, xdata, links):
+def topic_page(L, work, data, xdata, links, ev=None, evbase="evidence/"):
     """Topic mode: lanes are the reader's questions. Sections without content (no citation corpus,
     no rows, no search log) are left out instead of shown empty."""
-    css, js = assets(L, links)
+    css, js = assets(L, links, ev, evbase=evbase)
     m = L["meta"]
-    n_pre = sum(1 for n in L["nodes"] if links.of(n.get("openalex"), n.get("url"))[1] == "preprint")
     limits = "".join(f"<li>{md(x)}</li>" for x in L.get("limits", []))
-    pre = (f'<div class="legend"><span><svg width="26" height="14" aria-hidden="true"><rect x="1" y="1" width="24" '
-           f'height="12" rx="3" style="fill:none;stroke:var(--muted)" stroke-dasharray="4 2"/></svg>'
-           f'저널판 없음 (프리프린트 {n_pre}편)</span></div>') if n_pre else ""
+    pre = preprint_legend(n_preprints(L, links))
     sec = [f"""<section>
   <div class="col"><h2>질문 지도</h2>
-  <p>열은 이 주제를 읽는 사람이 묻는 질문, 맨 왼쪽 좁은 띠는 연구가 평가한 정책·사건, 행은 연도입니다(연도 간격은 등간격이 아님). 상자 색은 연구 설계이고, 각 질문 열 맨 아래의 굵은 칸이 <b>지금의 답</b>입니다. 상자에 마우스를 올리면 연결된 연구와 사건만 남고 요약이 뜹니다. <b>상자를 누르면 원문이 새 탭에서 열립니다.</b></p></div>
-  <div class="controls" role="group" aria-label="질문 강조"><span class="lab">질문 강조</span>{lane_buttons(L)}</div>
-  <div class="stage" id="stage"><div class="scroll">{svg(L, links)}</div><div class="tip" id="tip" hidden></div></div>
+  <p>열은 이 주제를 읽는 사람이 묻는 질문, 맨 왼쪽 좁은 띠는 연구가 평가한 정책·사건, 행은 연도입니다(연도 간격은 등간격이 아님). 상자 색은 연구 설계이고, 각 질문 열 맨 아래의 굵은 칸이 <b>지금의 답</b>입니다. 상자에 마우스를 올리면 연결된 연구와 사건만 남고 요약이 뜹니다. <b>상자를 누르면(또는 Enter) 근거 패널이 열리고</b>, 거기서 원문과 근거 기록을 엽니다. 지금의 답 칸을 누르면 그 질문의 연구 목록이 뜹니다.</p></div>
+  {map_block(L, links, ev)}
   {pre}
 </section>""", f'<section><div class="col"><h2>질문별 지금의 답</h2></div>{question_table(L, links)}</section>']
     if L.get("axes"):
@@ -1107,12 +1433,7 @@ scholarly-access-agent lineage page .
 scholarly-access-agent lineage report-section . --chapter &lt;n&gt;</pre>
 </section>""")
     body = "\n".join(sec)
-    return f"""<meta charset="utf-8">
-<title>{escape(m["page_title"])}</title>
-<meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
-<style>{css}</style>
+    return HEAD.format(title=escape(m["page_title"]), css=css) + f"""
 <div class="wrap">
 <header class="col">
   <div class="eyebrow">주제 지도 · {escape(m.get("date", ""))} 기준</div>
@@ -1126,10 +1447,31 @@ scholarly-access-agent lineage report-section . --chapter &lt;n&gt;</pre>
 """
 
 
+def evidence_href(work, out):
+    """Relative URL prefix from the written page to the topic folder's evidence/ (for "기록 보기")."""
+    rel = os.path.relpath(Path(work).resolve() / "evidence", Path(out).resolve().parent)
+    return rel.replace(os.sep, "/").rstrip("/") + "/"
+
+
+def embed_name(L):
+    return L["meta"].get("slug", "lineage") + EMBED_SUFFIX + ".html"
+
+
+def write_embed(L, work, links, out, ev=None):
+    """Write the embed variant to `out`; returns the path."""
+    ev = node_evidence(L, work) if ev is None else ev
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(embed_page(L, links, ev, evidence_href(work, out)), encoding="utf-8")
+    return out
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(prog="lineage page")
     ap.add_argument("work_dir")
     ap.add_argument("--out")
+    ap.add_argument("--embed", action="store_true",
+                    help="write the embed variant (<slug>_embed.html): map, controls, legend and panel only")
     a = ap.parse_args(argv)
     work = Path(a.work_dir)
     L = load(work / "lineage.json")
@@ -1140,6 +1482,8 @@ def main(argv=None):
         sys.exit("lineage.json problems:\n  - " + "\n  - ".join(errs))
     for w in warnings(L):
         print("warning:", w)
+    for nid, stem in missing_evidence(L, work):
+        print(f"warning: node {nid}: evidence/{stem}.json not found or unreadable; its panel shows the row level only")
     data = work / L["meta"].get("data_dir", "data")
     xd = L["meta"].get("expanded_dir")
     xdata = work / xd if xd else None
@@ -1147,7 +1491,10 @@ def main(argv=None):
     missing = [n["openalex"] for n in L["nodes"] if n.get("openalex") and n["openalex"] not in links.links]
     if missing:
         print("warning: no resolved link for", " ".join(missing), "-> run `lineage links`; falling back to OpenAlex pages")
-    out = Path(a.out) if a.out else work / (L["meta"].get("slug", "lineage") + ".html")
-    out.write_text(page(L, work, data, xdata, links), encoding="utf-8")
+    ev = node_evidence(L, work)
+    if a.embed:
+        out = write_embed(L, work, links, Path(a.out) if a.out else work / embed_name(L), ev)
+    else:
+        out = Path(a.out) if a.out else work / (L["meta"].get("slug", "lineage") + ".html")
+        out.write_text(page(L, work, data, xdata, links, ev, evidence_href(work, out)), encoding="utf-8")
     print("wrote", out)
-

@@ -2,9 +2,12 @@
 :root {
   --snu-ink: #1d232b; --snu-muted: #5b6470; --snu-accent: #1f5f99;
   --snu-rule: #d5dae1; --snu-head-bg: #eef2f6; --snu-zebra: #f8f9fb; --snu-callout: #f1f6fb;
+  --snu-surface: #ffffff;
+  --snu-font: "Pretendard", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  /* embedded figures (lineage map, charts) receive these tokens and the light/dark mode by postMessage */
 }
 body {
-  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  font-family: var(--snu-font);
   color: var(--snu-ink); font-size: 17px; line-height: 1.7; word-break: keep-all; overflow-wrap: anywhere;
 }
 p, li { max-width: 42em; }
@@ -22,3 +25,4 @@ figcaption, .figure-caption { font-size: 0.85rem; color: var(--snu-muted); }
 code { color: #24527a; background: #f3f5f8; }
 figure.snu-interactive { margin: 1.5rem 0; }
 figure.snu-interactive iframe { width: 100%; height: 82vh; border: 1px solid var(--snu-rule); border-radius: 6px; background: #fff; }
+figure.snu-interactive.snu-embed iframe { height: 640px; border: 0; border-radius: 0; background: transparent; display: block; }

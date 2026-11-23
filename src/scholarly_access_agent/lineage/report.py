@@ -7,9 +7,14 @@ REPORT_DIR defaults to WORK_DIR: the topic folder holds README.md (the report) a
 Writes, inside REPORT_DIR:
   lineage_section.md   the chapter: diagram, branch axes, stage table, main trends,
                        one-line summary, data evidence, lineage table with evidence status
-  figs/lineage.png     the diagram, rendered headless with Playwright (skipped with --no-figure)
-Paste or include the chapter into the report Markdown, then render the PDF as usual.
-The chapter follows report-pdf.md: pipe tables, local PNG, no raw HTML.
+  <slug>_embed.html    the embed variant of the map (map, controls, legend, evidence panel); the
+                       chapter's figure points at it, so the HTML report shows the clickable map
+                       in an auto-sized frame: ![caption](<slug>_embed.html "static=figs/lineage.png")
+  figs/lineage.png     the diagram, rendered headless with Playwright: the PDF output's figure
+--no-figure writes neither; --no-embed keeps the older figure line
+(![caption](figs/lineage.png "interactive=<slug>.html"), the full page inlined).
+Paste or include the chapter into the report Markdown, then render as usual.
+The chapter follows report-pdf.md: pipe tables, local images, no raw HTML.
 """
 from __future__ import annotations
 
@@ -18,8 +23,9 @@ import json
 import sys
 from pathlib import Path
 
-from .page import (DESIGN_KO, DISPUTE_CSS, Links, contested_rows, edge_list, has_disputes, is_event, lane_name, load,
-                   mode, parse_desc, question_numbers, study_ref, svg, validate, warnings)
+from .page import (DESIGN_KO, Links, base_css, contested_rows, edge_list, embed_name, is_event, lane_name, load,
+                   missing_evidence, mode, node_evidence, parse_desc, question_numbers, study_ref, svg, validate,
+                   warnings, write_embed)
 from .searchlog import saturation, searches, unsaturated_ko
 
 STATUS = {"fulltext": "본문 확인", "excerpts": "발췌 확인", "secondary": "인용 맥락만", "abstract": "초록만 확인",
@@ -211,18 +217,30 @@ def rows_md(L, links: Links) -> list[str]:
     return out + [""]
 
 
-def topic_section(L, data: Path, links: Links, chapter: int, figure: str | None, html_name: str) -> str:
+def figure_line(caption: str, figure: str | None, html_name: str, embed: str | None) -> list[str]:
+    """The chapter's figure: the embed page (HTML report) with the PNG as its static image (PDF), or the
+    older PNG titled interactive=<full page>."""
+    if embed:
+        title = f' "static={figure}"' if figure else ""
+        return [f"![{caption}. 상자를 누르면 근거 패널이 열립니다 (단독 페이지: {html_name})]({embed}{title})", ""]
+    if figure:
+        return [f"![{caption}. 상자를 누르면 원문이 열립니다 (단독 페이지: {html_name})]"
+                f"({figure} \"interactive={html_name}\")", ""]
+    return []
+
+
+def topic_section(L, data: Path, links: Links, chapter: int, figure: str | None, html_name: str,
+                  embed: str | None = None) -> str:
     """Topic mode chapter: the question map, then one row per reader question; empty parts are left out."""
     c = chapter
     xcap = X_CAPTION if any(t == "x" for _, _, t in edge_list(L)) else ""
     out = [f"## {c}. 질문별 연구 지도", ""]
     if L.get("meta", {}).get("lede"):
         out += [L["meta"]["lede"], ""]
-    if figure:
-        out += [f"![질문 지도. 열은 독자의 질문, 맨 왼쪽 띠는 연구가 평가한 정책·사건, 행은 연도(등간격 아님). "
-                f"상자 색은 연구 설계, 각 열 끝의 굵은 칸은 지금의 답. 실선은 직접 계승, 점선은 개념적 연결, "
-                f"잔 점선은 연구가 평가한 사건{xcap}. 상자를 누르면 원문이 열립니다 (단독 페이지: {html_name})]"
-                f"({figure} \"interactive={html_name}\")", ""]
+    out += figure_line("질문 지도. 열은 독자의 질문, 맨 왼쪽 띠는 연구가 평가한 정책·사건, 행은 연도(등간격 아님). "
+                       "상자 색과 모서리 글자는 연구 설계, 오른쪽 모서리 점은 근거 수준, 각 열 끝의 굵은 칸은 지금의 답. "
+                       f"실선은 직접 계승, 점선은 개념적 연결, 잔 점선은 연구가 평가한 사건{xcap}",
+                       figure, html_name, embed)
     parts = [("질문별 지금의 답", questions_table(L) + [""] + events_md(L))]
     if L.get("axes"):
         parts.append(("답이 갈리는 지점", axes_md(L)))
@@ -246,19 +264,18 @@ def topic_section(L, data: Path, links: Links, chapter: int, figure: str | None,
     return "\n".join(out)
 
 
-def section(L, data: Path, links: Links, chapter: int, figure: str | None, html_name: str) -> str:
+def section(L, data: Path, links: Links, chapter: int, figure: str | None, html_name: str,
+            embed: str | None = None) -> str:
     if mode(L) == "topic":
-        return topic_section(L, data, links, chapter, figure, html_name)
+        return topic_section(L, data, links, chapter, figure, html_name, embed)
     c = chapter
     xcap = X_CAPTION if any(t == "x" for _, _, t in edge_list(L)) else ""
     out = [f"## {c}. 계보와 흐름", ""]
     if L.get("meta", {}).get("lede"):
         out += [L["meta"]["lede"], ""]
-    if figure:
-        # The HTML report inlines the clickable page in place of the PNG ("interactive=" title).
-        out += [f"![계보도. 열은 계열, 행은 연도(등간격 아님). 실선은 직접 계승, 점선은 개념적 연결, "
-                f"굵은 선은 인용 네트워크 주경로{xcap}. 상자를 누르면 원문이 열립니다 (단독 페이지: {html_name})]"
-                f"({figure} \"interactive={html_name}\")", ""]
+    # The HTML report shows the embed page in a frame; the PDF uses the PNG ("static=" title).
+    out += figure_line("계보도. 열은 계열, 행은 연도(등간격 아님). 실선은 직접 계승, 점선은 개념적 연결, "
+                       f"굵은 선은 인용 네트워크 주경로{xcap}. 상자 모서리 점은 근거 수준", figure, html_name, embed)
     parts = [("갈라진 지점", axes_md(L)), ("단계별 흐름", lanes_table(L) + [""]), ("주요 흐름", trends_md(L))]
     if L.get("one_line"):
         parts.append(("한 줄 요약", [L["one_line"], ""]))
@@ -283,15 +300,14 @@ html,body{margin:0;padding:0;background:#ffffff}
 """
 
 
-def render_figure(L, links: Links, out_png: Path, scale: float = 2.0) -> Path:
-    """Screenshot the lineage SVG with headless Chromium (light theme, local fonts)."""
+def render_figure(L, links: Links, out_png: Path, scale: float = 2.0, ev=None) -> Path:
+    """Screenshot the lineage SVG with headless Chromium (light theme, local fonts): badges, legend
+    and the footer line (date, read-level counts, source) are part of the SVG."""
     from playwright.sync_api import sync_playwright
 
-    css = (Path(__file__).with_name("assets") / "page.css").read_text(encoding="utf-8")
-    if has_disputes(L):
-        css += DISPUTE_CSS
+    css = base_css(L)
     html = (f"<!doctype html><html><head><meta charset='utf-8'><style>{css}{FIGURE_CSS}</style></head>"
-            f"<body><div id='fig'>{svg(L, links)}</div></body></html>")
+            f"<body><div id='fig'>{svg(L, links, ev)}</div></body></html>")
     out_png.parent.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
@@ -309,7 +325,9 @@ def main(argv=None) -> int:
     ap.add_argument("work_dir")
     ap.add_argument("--report-dir", help="default: the work folder itself (topic folder layout)")
     ap.add_argument("--chapter", type=int, default=8)
-    ap.add_argument("--no-figure", action="store_true")
+    ap.add_argument("--no-figure", action="store_true", help="text only: no PNG and no embed page")
+    ap.add_argument("--no-embed", action="store_true",
+                    help="figure = the PNG titled interactive=<slug>.html (the full page) instead of the embed page")
     a = ap.parse_args(argv)
     work = Path(a.work_dir)
     rdir = Path(a.report_dir) if a.report_dir else work
@@ -323,18 +341,25 @@ def main(argv=None) -> int:
         return 1
     for w in warnings(L):  # the figure is the same drawing as the page: same layout warnings
         print("warning:", w, file=sys.stderr)
+    for nid, stem in missing_evidence(L, work):
+        print(f"warning: node {nid}: evidence/{stem}.json not found or unreadable", file=sys.stderr)
     data = work / L["meta"].get("data_dir", "data")
     links = Links(load(data / "links.json", {}), L.get("link_overrides"))
+    ev = node_evidence(L, work)
     rdir.mkdir(parents=True, exist_ok=True)
-    figure = None
+    figure = embed = None
     if not a.no_figure:
         try:
-            render_figure(L, links, rdir / "figs" / "lineage.png")
+            render_figure(L, links, rdir / "figs" / "lineage.png", ev=ev)
             figure = "figs/lineage.png"
         except Exception as exc:  # Playwright or Chromium missing: keep the text chapter
             print(f"warning: figure not rendered ({type(exc).__name__}); chapter written without it", file=sys.stderr)
+        if not a.no_embed:
+            embed = embed_name(L)
+            write_embed(L, work, links, rdir / embed, ev)
     html_name = L["meta"].get("slug", "lineage") + ".html"
-    md = section(L, data, links, a.chapter, figure, html_name)
+    md = section(L, data, links, a.chapter, figure, html_name, embed)
     (rdir / "lineage_section.md").write_text(md, encoding="utf-8")
-    print(json.dumps({"ok": True, "section": str(rdir / "lineage_section.md"), "figure": figure}, ensure_ascii=False))
+    print(json.dumps({"ok": True, "section": str(rdir / "lineage_section.md"), "figure": figure, "embed": embed},
+                     ensure_ascii=False))
     return 0

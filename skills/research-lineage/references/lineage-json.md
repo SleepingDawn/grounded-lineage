@@ -18,7 +18,8 @@ Text fields accept `**bold**`; everything else is escaped. Full examples: `examp
     "data_dir": "data",
     "expanded_dir": "data_x",                 // omit if not widened
     "focus_regex": "long-range|electrostat",  // marks on-topic titles in the expansion list
-    "expansion_note": "why widening was skipped"  // shown when expanded_dir is omitted
+    "expansion_note": "why widening was skipped",  // shown when expanded_dir is omitted
+    "figure_source": "OpenAlex 인용 코퍼스 + 원문 21편"  // optional: source named in the figure footer
   },
   "lanes": [                                  // index = lane number
     {"label": ["B. 전하 평형", "(QEq)"],         // 1 or 2 short lines
@@ -31,6 +32,8 @@ Text fields accept `**bold**`; everything else is escaped. Full examples: `examp
                                              // "unlinked": "why" (box not clickable; check warns)
      "design": "model",                      // optional: model | observational | experiment | quasi | review
      "ref": 12,                               // optional: the report's reference number ("Ko 2021 [12]")
+     "evidence": "ko2021",                    // optional: stem of evidence/ko2021.json in the topic folder;
+                                             // the side panel and the corner badge come from that record
      "note": "one line: what it changed",    // shown in the tooltip
      "key": true}                             // optional: the seed or the focus paper
   ],
@@ -91,7 +94,7 @@ Evidence labels on the page and in the report chapter follow snu-library-scholar
 - **Edge objects.** Any edge may be an object `{"from", "to", "type", "basis", "evidence"}` instead of the array; both forms can be mixed and render the same. Give every `s` edge a `basis` and an `evidence` locator: `cites` (the later paper cites the earlier one and says it builds on it), `method`, `data`, `authors` (same group continues the line), `conceptual`. An `s` edge with no basis beyond "it seemed to follow" belongs in `d`.
 - **x edges** (disputes/contradicts) join two studies that give conflicting answers. They are drawn as a red-toned dash-dot line with no arrowhead and a ringed **≠** at the midpoint; the pattern and marker, not the colour alone, set them apart. The legend inside the figure lists them; they never get a "backward in time" warning.
 - **contested** lists the disputes as claims with two sides (`nodes` = node ids, `says` = that side's answer), `metric_note` (why the numbers can differ) and `status`. The page and the report chapter show a **쟁점** table: claim | A | B | 측정 차이 | 상태 | 근거 수준. A side's evidence level comes from the `rows` of its nodes (a row belongs to a node when it has the same `openalex` or `url`, or `"node": "<id>"`).
-- Files without these fields render exactly as before. Topic mode accepts them the same way (the 쟁점 section follows 답이 갈리는 지점).
+- Files without these fields render as before (plus the badges, toggles and panel below). Topic mode accepts them the same way (the 쟁점 section follows 답이 갈리는 지점).
 
 ## Topic mode
 
@@ -123,9 +126,30 @@ For a topic question ("도시 대중교통 정기권은 효과가 있나") the l
 }
 ```
 
+## Evidence panel, badges and controls
+
+- **Boxes open a side panel**, not the paper: a click, a tap or Enter on a focused box opens it (right-hand drawer on wide screens, bottom sheet on narrow ones; Esc or × closes it). It shows the title, authors and year, venue, the version read, the derived read label with its locator, each criterion judgment with section/page and `read_mode`, the `results` table (value, range, unit, page), and two buttons: **원문 열기** (the journal-first link) and **기록 보기** (`evidence/<stem>.json`, relative to the page). Hovering with a mouse or focusing a box still highlights its lineage and shows the tooltip.
+- **Where the panel data comes from.** A node with `"evidence": "<stem>"` gets a slim copy of `evidence/<stem>.json` embedded at build time; its label is derived by `evidence.derive_label` (from `access`, `read_via`, each locator's `read_mode`), never typed by hand. A node without one falls back to its `rows` (same `openalex`/`url`, or `"node": "<id>"`): the strongest row level, else 미확인. A stem whose file is missing is a warning in `lineage check`, `page` and `report-section`.
+- **Evidence badge** (box's top-right corner): 본문 확인 filled dot, 발췌 확인 half dot, 인용 맥락만 dashed ring, 초록만 확인 hollow ring, 미확인 none. The legend inside the figure lists them.
+- **Design** colours are the Okabe–Ito colour-blind-safe set (model #0072B2, observational #009E73, experiment #D55E00, quasi #E69F00, review #CC79A7), the same in light and dark mode, plus a one-letter tag in the top-left corner (모/관/실/준/리). Box text stays in the ink colour. The topic **지금의 답** cell has a neutral ink border; clicking it lists that question's studies with their labels in the panel.
+- **Controls**: lane/question highlight; edge-type toggles (only the types in use: 직접 확장 s, 개념 연결 d, 주경로 m, 사건 평가 e, 상충 x); **긴 연결 줄이기** draws edges spanning more than 15 years faint with a small target label at their start ("→ Marcolongo 2016"), on by default above 40 nodes; **화면 맞춤** scales the map to the screen width. The year column sticks while the map scrolls sideways, and the lane headers while the page scrolls.
+- **Figure footer** (page SVG and report PNG): date, how many studies are 본문/발췌/인용 맥락/초록/미확인, and the source (`meta.figure_source`, else OpenAlex plus evidence/ and rows when present).
+
+## Embed variant and reports
+
+`lineage page . --embed` writes `<slug>_embed.html`: the map, the lane and edge controls, the legend and the panel only (no header, tables, search log or rerun commands), with a transparent background. Inside a report it posts its height to the frame (`{type: "snu-embed-height", height}`) and takes the report's light/dark mode and colour/font tokens (`{type: "snu-embed-theme", theme, vars}`; `--snu-ink`, `--snu-muted`, `--snu-rule`, `--snu-accent`, `--snu-head-bg`, `--snu-surface`, `--snu-font`). Opened on its own it follows `prefers-color-scheme`.
+
+`lineage report-section` writes the embed page next to the chapter and points the figure at it, with the PNG for the PDF:
+
+```markdown
+![계보도. … 상자를 누르면 근거 패널이 열립니다](les_lineage_embed.html "static=figs/lineage.png")
+```
+
+`render-report` (Quarto) turns any image whose target is a local `.html` file into an auto-sized, sandboxed frame in the HTML output; the PDF uses the `static=` image (default: the same path with `.png`, when it exists) or leaves the figure out with a warning. `"height=480"` sets the frame height used until the page reports its own (default 640 px). The older `![…](figs/lineage.png "interactive=page.html")` form still inlines the full page (`--no-embed`). The built-in reportlab PDF engine does not read HTML figures; it skips them with a warning.
+
 ## Validation (`lineage check`)
 
-`lineage page` and `lineage report-section` refuse to render and list problems when: a top-level key is missing, `meta.mode` is not lineage/topic, a lane index is out of range, a study node lacks `openalex`/`url` and gives no `unlinked` reason, a box title or subtitle (or event pill title) is wider than the box (Hangul counts about twice a Latin letter), more than 50 nodes, an edge points at an unknown node or has a type other than s/d/m/e/x, an edge object has a `basis` outside the five values or a non-string `evidence`, a `contested` entry lacks `claim`, has a side without `nodes`, names an unknown node, or has a `status` other than open/resolved/partly, an `e` edge does not run from a study to an event, an event node is joined by a non-`e` edge, an event node sits outside the events lane or a study node inside it, there is more than one events lane, a `design` is not one of the five values, a row level is not one of the three values, or there are more than 12 lanes. In topic mode, also when a non-event lane has no `question`.
+`lineage page` and `lineage report-section` refuse to render and list problems when: a top-level key is missing, `meta.mode` is not lineage/topic, a lane index is out of range, a study node lacks `openalex`/`url` and gives no `unlinked` reason, a box title or subtitle (or event pill title) is wider than the box (Hangul counts about twice a Latin letter), more than 50 nodes, an edge points at an unknown node or has a type other than s/d/m/e/x, an edge object has a `basis` outside the five values or a non-string `evidence`, a `contested` entry lacks `claim`, has a side without `nodes`, names an unknown node, or has a `status` other than open/resolved/partly, an `e` edge does not run from a study to an event, an event node is joined by a non-`e` edge, an event node sits outside the events lane or a study node inside it, there is more than one events lane, a `design` is not one of the five values, an `evidence` value is not a bare file stem, a row level is not one of the three values, or there are more than 12 lanes. In topic mode, also when a non-event lane has no `question`.
 
 It prints warnings (and still renders) for more than 10 lanes, lanes with fewer than 2 nodes, unlinked study nodes, more than 40 nodes, edges that run backward in time (`e` and `x` edges excepted), and edges drawn through another box. In topic mode, also for a question lane without `answer`, more than 5 question lanes, and studies without `design`.
 
