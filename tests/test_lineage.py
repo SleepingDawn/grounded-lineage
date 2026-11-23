@@ -321,6 +321,149 @@ class PageAndReportTests(unittest.TestCase):
                           if not w.startswith(("no_korean_font", "quarto_unavailable"))], [])
 
 
+TOPIC = {
+    "meta": {"mode": "topic", "page_title": "정기권 지도", "slug": "topic_map", "date": "2026-11-23",
+             "headline": "Topic", "lede": "lede", "data_dir": "data"},
+    "lanes": [{"kind": "events", "label": "정책·사건"},
+              {"question": "이용을 얼마나 늘리나?", "answer": "단기 +2.7~12%"},
+              {"question": "가격은 어떻게 정하나?", "answer": "이부요금"}],
+    "nodes": [{"id": "ev", "kind": "event", "lane": 0, "year": 1998, "title": "MetroCard"},
+              {"id": "h", "lane": 1, "year": 2000, "title": "MetroCard 평가", "sub": "Hirsch 2000", "openalex": "W1",
+               "design": "observational", "ref": 5},
+              {"id": "b", "lane": 1, "year": 2021, "title": "RCT", "sub": "Bull 2021", "openalex": "W2",
+               "design": "experiment"},
+              {"id": "s", "lane": 2, "year": 1967, "title": "클럽형 정기권", "sub": "Sherman 1967", "openalex": "W3",
+               "design": "model"},
+              {"id": "c", "lane": 2, "year": 1988, "title": "이부요금", "sub": "Carbajo 1988", "openalex": "W4",
+               "design": "model"},
+              {"id": "r", "lane": 2, "year": 2021, "title": "리뷰", "sub": "Hörcher 외 2021", "openalex": "W5",
+               "design": "review"}],
+    "edges": [["s", "c", "s"], ["c", "r", "s"], ["h", "b", "d"], ["h", "ev", "e"]],
+    "limits": ["demo"],
+}
+
+
+class TopicModeTests(unittest.TestCase):
+    def topic(self):
+        return json.loads(json.dumps(TOPIC))
+
+    def test_valid_topic_file_has_no_problems_or_warnings(self):
+        self.assertEqual(page.validate(TOPIC), [])
+        self.assertEqual(page.warnings(TOPIC), [])  # the e edge runs backward in time by design: no warning
+
+    def test_missing_question_blocks_and_missing_answer_warns(self):
+        L = self.topic()
+        del L["lanes"][1]["question"]
+        L["lanes"][1]["label"] = "이용"
+        self.assertTrue(any("lane 1: topic mode needs a 'question'" in e for e in page.validate(L)))
+        L = self.topic()
+        del L["lanes"][2]["answer"]
+        self.assertEqual(page.validate(L), [])
+        self.assertTrue(any("question lane 2" in w and "no 'answer'" in w for w in page.warnings(L)))
+
+    def test_bad_e_edges_are_problems(self):
+        L = self.topic()
+        L["edges"].append(["h", "b", "e"])      # study -> study
+        L["edges"].append(["ev", "h", "e"])     # event -> study
+        L["edges"].append(["s", "ev", "s"])     # event joined by a non-e edge
+        errs = page.validate(L)
+        self.assertEqual(sum("from a study node to the event node" in e for e in errs), 2)
+        self.assertTrue(any("only through 'e' edges" in e for e in errs))
+
+    def test_event_outside_events_lane_and_second_events_lane(self):
+        L = self.topic()
+        L["nodes"][0]["lane"] = 1
+        self.assertTrue(any("event node in lane 1, which is not the events lane" in e for e in page.validate(L)))
+        L = self.topic()
+        L["nodes"][1]["lane"] = 0
+        self.assertTrue(any("study node in the events lane" in e for e in page.validate(L)))
+        L = self.topic()
+        L["lanes"].append({"kind": "events"})
+        self.assertTrue(any("2 events lanes" in e for e in page.validate(L)))
+
+    def test_topic_warnings_design_thin_lane_and_question_count(self):
+        L = self.topic()
+        del L["nodes"][2]["design"]
+        L["nodes"][2]["design"] = None
+        L["lanes"] += [{"question": f"Q{k}?", "answer": "a"} for k in range(4)]
+        ws = page.warnings(L)
+        self.assertTrue(any("without 'design'" in w and ": b" in w for w in ws))
+        self.assertTrue(any("6 question lanes (> 5)" in w for w in ws))
+        self.assertTrue(any("question lane 3" in w and "0 studies" in w for w in ws))
+        L["nodes"][2]["design"] = "survey"
+        self.assertTrue(any("design 'survey'" in e for e in page.validate(L)))
+
+    def test_unlinked_study_is_allowed_with_a_reason_and_warned(self):
+        L = self.topic()
+        del L["nodes"][2]["openalex"]
+        self.assertTrue(any("needs 'openalex'" in e for e in page.validate(L)))
+        L["nodes"][2]["unlinked"] = "no record found"
+        self.assertEqual(page.validate(L), [])
+        self.assertTrue(any("node b has no link" in w for w in page.warnings(L)))
+        self.assertIn('<g tabindex="0" class="node"', page.svg(L, page.Links({}, {})))
+
+    def test_same_lane_edge_skipping_a_box_bows_around_it(self):
+        L = self.topic()
+        L["edges"].append(["s", "r", "d"])  # 1967 -> 2021 in lane 2 passes the 1988 box
+        self.assertEqual(page.edges_through_boxes(L), [])
+
+    def test_page_shows_events_band_answer_cells_and_design_legend(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lineage.json").write_text(json.dumps(TOPIC, ensure_ascii=False), encoding="utf-8")
+            with quiet():
+                page.main([str(root)])
+            html = (root / "topic_map.html").read_text(encoding="utf-8")
+        self.assertIn('class="node ev"', html)                 # event pill
+        self.assertIn('class="e ev"', html)                    # evaluates edge
+        self.assertIn('<g class="ans" data-lane="1">', html)   # answer cell at the end of the lane
+        self.assertIn("단기 +2.7~12%", html)
+        self.assertIn(">Q1</text>", html)
+        self.assertIn("이용을 얼마나 늘리나?", html)
+        for label in page.DESIGN_KO.values():                   # legend inside the SVG (the PNG carries it)
+            self.assertIn(label, html)
+        self.assertIn("var(--d-observational)", html)
+        self.assertIn("질문별 지금의 답", html)
+        self.assertNotIn("데이터로 본 근거", html)              # no corpus: section left out, not empty
+        # the events band is the first, narrower column
+        geo = page.Geo(TOPIC)
+        self.assertEqual(geo.order[0], 0)
+        self.assertLess(geo.w[0], geo.w[1])
+
+    def test_report_section_has_per_question_table(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lineage.json").write_text(json.dumps(TOPIC, ensure_ascii=False), encoding="utf-8")
+            with quiet():
+                self.assertEqual(report.main([str(root), "--chapter", "4", "--no-figure"]), 0)
+            md = (root / "lineage_section.md").read_text(encoding="utf-8")
+        self.assertIn("## 4. 질문별 연구 지도", md)
+        self.assertIn("| 질문 | 지금의 답 | 핵심 연구 |", md)
+        self.assertIn("| Q1. 이용을 얼마나 늘리나? | 단기 +2.7~12% | Hirsch 2000 [5]: 관찰자료; Bull 2021: 실험(무작위) |", md)
+        self.assertIn("MetroCard (1998; 평가: Hirsch 2000 [5])", md)
+        self.assertNotIn("| 계열 |", md)
+        self.assertNotIn("analysis.json", md)
+        self.assertNotIn("<", md)
+
+    def test_lineage_mode_with_design_colours_boxes_and_adds_legend(self):
+        L = json.loads(json.dumps(LINEAGE))
+        plain = page.svg(L, page.Links({}, {}))
+        self.assertNotIn("--d-", plain)
+        L["nodes"][0]["design"] = "model"
+        coloured = page.svg(L, page.Links({}, {}))
+        self.assertIn("stroke:var(--d-model)", coloured)
+        self.assertIn("모형·이론", coloured)
+        self.assertNotIn("관찰자료", coloured)  # lineage mode lists only the designs in use
+
+    def test_transit_example_checks_clean(self):
+        ex = Path(__file__).resolve().parents[1] / "skills" / "research-lineage" / "examples" / "transit" / "lineage.json"
+        L = json.loads(ex.read_text(encoding="utf-8"))
+        self.assertEqual(page.validate(L), [])
+        ws = page.warnings(L)
+        self.assertEqual(len(ws), 1)  # the one unlinked review, explained in its 'unlinked' field and limits
+        self.assertIn("node rodrigue has no link", ws[0])
+
+
 class CliTests(unittest.TestCase):
     def test_dispatch_and_unknown_command(self):
         with quiet():

@@ -1,0 +1,88 @@
+{
+ "meta": {
+  "mode": "topic",
+  "page_title": "대중교통 정기권 지도",
+  "slug": "transit_passes_map",
+  "date": "2026-11-23",
+  "headline": "도시 대중교통 정기권·무제한권: 무엇을 묻고, 지금의 답은 무엇인가",
+  "lede": "정기권·무제한권·요금 상한제 연구를 독자가 묻는 네 가지 질문으로 나누고, 각 연구가 평가한 실제 정책(런던 Travelcard부터 서울 기후동행카드까지)과 연결했습니다. 상자 색은 연구 설계입니다.",
+  "papers_read": [],
+  "data_dir": "data"
+ },
+ "lanes": [
+  {"kind": "events", "label": "정책·사건"},
+  {"label": "이용 효과", "question": "정기권·무제한권은 이용을 얼마나 늘리나?",
+   "answer": "단기 +2.7~12%, 주로 기존 이용자 통행 증가"},
+  {"label": "가격 설계", "question": "가격은 어떻게 정하나?",
+   "answer": "가입료+한계비용 이부요금에 소득·혼잡 반영"},
+  {"label": "요금 상한제", "question": "상한제는 정기권과 무엇이 다른가?",
+   "answer": "선결제 없이 상한; 도입 1년 후 버스 +3.6~4.1%"},
+  {"label": "형평성", "question": "누구에게 유리한가?",
+   "answer": "선결제 여력이 낮은 저소득층은 할인에서 소외"}
+ ],
+ "nodes": [
+  {"id": "ev_travelcard", "kind": "event", "lane": 0, "year": 1983, "title": "Travelcard",
+   "note": "런던 Travelcard 도입 (1983–84): 구역제 무제한 정기권"},
+  {"id": "ev_metrocard", "kind": "event", "lane": 0, "year": 1998, "title": "MetroCard",
+   "note": "뉴욕 MetroCard 무제한 승차권 도입 (1998)"},
+  {"id": "ev_9euro", "kind": "event", "lane": 0, "year": 2022, "title": "9-Euro-Ticket",
+   "note": "독일 전국 대중교통 월 9유로 정액권 (2022년 여름 3개월)"},
+  {"id": "ev_climate", "kind": "event", "lane": 0, "year": 2024, "title": "기후동행카드",
+   "note": "서울 월 정액 무제한 대중교통 카드 (2024)"},
+
+  {"id": "doxsey", "lane": 1, "year": 1984, "title": "무제한 정기권 수요", "sub": "Doxsey 1984",
+   "openalex": "W573012285", "design": "model", "note": "무제한 정기권을 누가 사는지 통행 빈도로 설명한 수요 모형"},
+  {"id": "hirsch", "lane": 1, "year": 2000, "title": "MetroCard 평가", "sub": "Hirsch 2000",
+   "openalex": "W1989650281", "design": "observational", "note": "뉴욕 MetroCard 요금 인센티브(무제한권 포함)의 이용 효과"},
+  {"id": "thogersen", "lane": 1, "year": 2009, "title": "무료 1개월 정기권", "sub": "Thøgersen 2009",
+   "openalex": "W2068412639", "design": "experiment", "note": "자가용 이용자에게 무료 1개월 정기권을 준 현장 실험"},
+  {"id": "bull", "lane": 1, "year": 2021, "title": "무료 대중교통 RCT", "sub": "Bull 2021",
+   "openalex": "W3098137914", "design": "experiment", "note": "칠레 산티아고 무료 대중교통 무작위 대조 실험"},
+  {"id": "wallimann", "lane": 1, "year": 2023, "title": "가격 인하 합성대조", "sub": "Wallimann 2023",
+   "openalex": "W3216384912", "design": "quasi", "note": "도시 대중교통 가격 인하의 이용 효과를 합성대조법으로 추정"},
+  {"id": "loder", "lane": 1, "year": 2024, "title": "9-Euro 패널 조사", "sub": "Loder 2024",
+   "openalex": "W4391074600", "design": "observational", "note": "9-Euro-Ticket 기간 전후의 패널 조사"},
+  {"id": "leekim", "lane": 1, "year": 2025, "title": "기후동행카드 효과", "sub": "Lee·Kim 2025",
+   "openalex": "W4413207589", "design": "quasi", "note": "서울 기후동행카드의 단기 효과"},
+
+  {"id": "sherman", "lane": 2, "year": 1967, "title": "클럽형 정기권", "sub": "Sherman 1967",
+   "openalex": "W577854925", "design": "model", "note": "정기권을 클럽 회원권(가입료 + 이용료)으로 본 초기 가격 이론"},
+  {"id": "carbajo", "lane": 2, "year": 1988, "title": "이부요금형 정기권", "sub": "Carbajo 1988",
+   "openalex": "W581881157", "design": "model", "note": "정기권을 비선형(이부) 요금으로 분석"},
+  {"id": "jaradiaz", "lane": 2, "year": 2016, "title": "소득 격차와 가격", "sub": "Jara-Díaz 2016",
+   "openalex": "W2532471731", "design": "model", "note": "소득·자동차 보유 격차를 반영한 정기권 최적 가격"},
+  {"id": "horcher18", "lane": 2, "year": 2018, "title": "혼잡과 정기권", "sub": "Hörcher 2018",
+   "openalex": "W7131669363", "design": "model", "note": "혼잡 외부효과와 내생적 용량 아래에서 정기권의 비효율"},
+  {"id": "horcher21", "lane": 2, "year": 2021, "title": "교통경제학 리뷰", "sub": "Hörcher 외 2021",
+   "openalex": "W3157007363", "design": "review", "note": "Hörcher·Tirachini: 대중교통 경제학 리뷰 (요금 설계 포함)"},
+
+  {"id": "chalabianlou", "lane": 3, "year": 2015, "title": "요금 상한제 평가", "sub": "Chalabianlou 2015",
+   "openalex": "W2291529606", "design": "model", "note": "호주·뉴질랜드 요금 상한제를 승객 인센티브로 검토·평가"},
+  {"id": "hightower", "lane": 3, "year": 2022, "title": "미국 상한제 현황", "sub": "Hightower 2022",
+   "openalex": "W4280502515", "design": "observational", "note": "미국 요금 상한제 실태와 이용자 편익"},
+  {"id": "ziedan", "lane": 3, "year": 2024, "title": "앱 vs 상한제", "sub": "Ziedan 2024",
+   "openalex": "W4388024290", "design": "quasi", "note": "앱 결제와 요금 상한제 중 무엇이 버스 이용을 늘렸나"},
+  {"id": "mannlevinson", "lane": 3, "year": 2026, "title": "공간 요금 모형", "sub": "Mann·Levinson 2026",
+   "openalex": "W7211900298", "design": "model", "note": "정량 공간 교통 모형으로 본 대중교통 요금 설계"},
+
+  {"id": "verbich", "lane": 4, "year": 2017, "title": "요금 구조 형평성", "sub": "Verbich 2017",
+   "openalex": "W2564122946", "design": "observational", "note": "몬트리올 요금 구조와 사회적 취약성"},
+  {"id": "bondemark", "lane": 4, "year": 2021, "title": "가난할수록 비싼가", "sub": "Bondemark 2021",
+   "openalex": "W3093495213", "design": "model", "note": "스웨덴: 가난할수록 대중교통이 비싼가"},
+  {"id": "rodrigue", "lane": 4, "year": 2025, "title": "요금 형평 리뷰", "sub": "Rodrigue 2025",
+   "unlinked": "OpenAlex 저자·제목 검색(2026-11-23)에서 레코드를 찾지 못함", "design": "review",
+   "note": "요금 형평성 리뷰 (원 보고서 인용; 서지 레코드 미확인)"}
+ ],
+ "edges": [
+  ["sherman", "carbajo", "s"], ["carbajo", "jaradiaz", "s"], ["carbajo", "horcher18", "s"],
+  ["horcher18", "horcher21", "s"],
+  ["doxsey", "hirsch", "d"], ["bull", "wallimann", "d"],
+  ["hightower", "ziedan", "s"], ["chalabianlou", "hightower", "d"],
+  ["hirsch", "ev_metrocard", "e"], ["loder", "ev_9euro", "e"], ["leekim", "ev_climate", "e"]
+ ],
+ "limits": [
+  "스키마 시연용 예시입니다. 지금의 답과 수치는 원 보고서의 요약을 옮긴 것이고, 이 파일은 원문 확인 수준(rows)을 기록하지 않습니다.",
+  "Rodrigue 2025는 OpenAlex에서 레코드를 찾지 못해 링크 없이 두었습니다 (unlinked; check는 이 한 건만 경고합니다).",
+  "OpenAlex 연도가 온라인 선공개 연도인 논문(Bull, Hörcher·Tirachini, Verbich, Bondemark, Ziedan)은 권호 연도로 적었습니다."
+ ]
+}

@@ -7,12 +7,13 @@
   function walk(start, adj){ const seen = new Set([start]), st=[start];
     while (st.length){ const v = st.pop(); (adj[v]||[]).forEach(u => { if(!seen.has(u)){ seen.add(u); st.push(u);} }); }
     return seen; }
-  const nodes = [...svg.querySelectorAll('.node')], edges = [...svg.querySelectorAll('.e')];
+  const nodes = [...svg.querySelectorAll('.node')], edges = [...svg.querySelectorAll('.e')], answers = [...svg.querySelectorAll('.ans')];
   let laneSel = null;
-  function clear(){ svg.classList.remove('focus'); nodes.forEach(n=>n.classList.remove('on')); edges.forEach(e=>e.classList.remove('on')); }
+  function clear(){ svg.classList.remove('focus'); nodes.forEach(n=>n.classList.remove('on')); edges.forEach(e=>e.classList.remove('on')); answers.forEach(a=>a.classList.remove('on')); }
   function applyLane(){ clear(); if (laneSel === null) return;
     svg.classList.add('focus');
     nodes.forEach(n => { if (+n.dataset.lane === laneSel) n.classList.add('on'); });
+    answers.forEach(a => { if (+a.dataset.lane === laneSel) a.classList.add('on'); });
     edges.forEach(e => { const a = N[e.dataset.s], b = N[e.dataset.t];
       if (a.lane === laneSel && b.lane === laneSel) e.classList.add('on'); }); }
   function lineage(id){ clear(); svg.classList.add('focus');
@@ -21,12 +22,14 @@
     edges.forEach(e => { if (set.has(e.dataset.s) && set.has(e.dataset.t)) e.classList.add('on'); }); }
   function showTip(el){ const d = N[el.dataset.id];
     const lane = LANES[d.lane];
-    tip.innerHTML = '<div class="k"><i style="background:var(--c'+d.lane+')"></i>'+lane+'</div>'
+    tip.innerHTML = '<div class="k"><i style="background:var(--c'+(+d.lane)+')"></i><span></span></div>'
       + '<div class="t"></div><div class="m"></div><div class="n"></div><div class="lk"></div>';
+    tip.querySelector('.k span').textContent = lane + (d.dz ? ' · ' + d.dz : '');
     tip.querySelector('.t').textContent = d.t;
     tip.querySelector('.m').textContent = [d.by, d.venue, d.year, d.cites!=null ? ('인용 '+d.cites.toLocaleString()) : ''].filter(Boolean).join(' · ');
     tip.querySelector('.n').textContent = d.note;
-    tip.querySelector('.lk').textContent = '누르면 '+KIND[d.kind]+' 원문이 새 탭에서 열림 ↗';
+    tip.querySelector('.lk').textContent = d.nolink ? (d.ev ? '' : '연결된 원문 없음')
+      : d.ev ? '누르면 출처가 새 탭에서 열림 ↗' : '누르면 '+KIND[d.kind]+' 원문이 새 탭에서 열림 ↗';
     tip.hidden = false;
     const sr = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
     let x = r.right - sr.left + 10, y = r.top - sr.top - 6;

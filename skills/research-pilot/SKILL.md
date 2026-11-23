@@ -18,7 +18,7 @@ One entry point that picks a playbook, runs the research skills in a fixed order
 | field status, trends, literature review, "what is known about X" | [playbooks/status.md](playbooks/status.md) |
 | research topics, gaps, next project, "what should I work on" | [playbooks/topics.md](playbooks/topics.md) |
 | resume, "이어서" | the playbook named in the topic folder's `run.jsonl`; continue after its last logged step (`event: done` means finished) |
-| where a concept came from, how it branched, what is mainstream now | [playbooks/lineage.md](playbooks/lineage.md) |
+| where a concept came from, how it branched, what is mainstream now; the research flow of a topic (연구 흐름) | [playbooks/lineage.md](playbooks/lineage.md) |
 | is this one idea new, has someone done X | [playbooks/novelty.md](playbooks/novelty.md) |
 | turn a recommended topic or a paper's method into calculations | [playbooks/calculation.md](playbooks/calculation.md) |
 

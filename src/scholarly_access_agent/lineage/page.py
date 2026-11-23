@@ -21,7 +21,17 @@ LANE_W, X0, BOX_W, BOX_H, STACK, TOP = 132, 58, 120, 38, 46, 74
 BREAK_GAP = 8  # insert a "(시간 생략)" break when consecutive node years differ by more than this
 KIND_KO = {"journal": "저널", "proceedings": "학회 논문집", "preprint": "프리프린트", "unknown": "OpenAlex"}
 LEVEL_KO = {"fulltext": "본문 확인", "abstract": "초록만 확인", "metadata": "미확인"}  # same labels as snu-library-scholarly-access
-EDGE_TYPES = {"s", "d", "m"}
+EDGE_TYPES = {"s", "d", "m", "e"}  # e = evaluates: study -> the real-world event it evaluates
+MODES = ("lineage", "topic")
+# Study design (optional node field): topic mode colours boxes by it; lineage mode only when present.
+DESIGN_KO = {"model": "모형·이론", "observational": "관찰자료", "experiment": "실험(무작위)",
+             "quasi": "준실험(DiD·합성대조)", "review": "리뷰"}
+EDGE_KO = {"s": "직접 확장·변형", "d": "개념적 연결", "m": "인용 네트워크 주경로 (SPC)", "e": "사건 평가 (연구 → 사건)"}
+# Topic mode: question lanes are wider (their header is a question), the events band is narrower.
+Q_LANE_W, EV_LANE_W, X0_TOPIC, PILL_H = 156, 112, 64, 24
+PILL_W = EV_LANE_W - 14
+ANS_LH, ANS_PAD = 16, 11  # answer cell: line height, inner padding
+MAX_QUESTIONS = 5
 
 
 def md(t):
@@ -32,6 +42,24 @@ def load(p, default=None):
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else default
 
 
+def mode(L):
+    return (L.get("meta") or {}).get("mode") or "lineage"
+
+
+def is_event(n):
+    return n.get("kind") == "event"
+
+
+def is_events_lane(ln):
+    return isinstance(ln, dict) and ln.get("kind") == "events"
+
+
+def question_numbers(L):
+    """{lane index: 1-based question number} for the non-event lanes, in lane order."""
+    qs = [i for i, ln in enumerate(L["lanes"]) if not is_events_lane(ln)]
+    return {i: k for k, i in enumerate(qs, 1)}
+
+
 # ---------------------------------------------------------------- validation
 def validate(L):
     errs = []
@@ -40,31 +68,66 @@ def validate(L):
             errs.append(f"missing top-level key '{k}'")
     if errs:
         return errs
-    nl = len(L["lanes"])
+    m = mode(L)
+    if m not in MODES:
+        errs.append(f"meta.mode '{m}' must be one of {list(MODES)}")
+    topic = m == "topic"
+    lanes = L["lanes"]
+    nl = len(lanes)
     if nl > 12:
         errs.append(f"{nl} lanes; the page has colors for at most 12 (consolidate the axes)")
+    ev_lanes = [i for i, ln in enumerate(lanes) if is_events_lane(ln)]
+    if len(ev_lanes) > 1:
+        errs.append(f"{len(ev_lanes)} events lanes {ev_lanes}; put all real-world events in one lane with \"kind\": \"events\"")
+    for i, ln in enumerate(lanes):
+        if is_events_lane(ln):
+            continue
+        if topic and not ln.get("question"):
+            errs.append(f"lane {i}: topic mode needs a 'question' (the reader's question this lane answers)")
+        elif not ln.get("label") and not ln.get("question"):
+            errs.append(f"lane {i}: missing 'label'")
     ids = set()
     for n in L["nodes"]:
-        for k in ("id", "lane", "year", "title", "sub"):
+        ev = is_event(n)
+        for k in ("id", "lane", "year", "title") + (() if ev else ("sub",)):
             if k not in n:
                 errs.append(f"node {n.get('id', '?')}: missing '{k}'")
         if n.get("id") in ids:
             errs.append(f"duplicate node id {n['id']}")
         ids.add(n.get("id"))
+        if n.get("kind") not in (None, "study", "event"):
+            errs.append(f"node {n.get('id')}: kind '{n.get('kind')}' must be 'event' (in the events lane) or omitted")
         if not (0 <= n.get("lane", -1) < nl):
             errs.append(f"node {n.get('id')}: lane {n.get('lane')} out of range 0..{nl-1}")
-        if not n.get("openalex") and not n.get("url"):
-            errs.append(f"node {n.get('id')}: needs 'openalex' (preferred) or 'url' so the box can link to the paper")
-        for k, limit in (("title", BOX_W - 8), ("sub", BOX_W - 6)):
-            w = text_px(n.get(k, ""), 12 if k == "title" else 10.5)
+        elif ev and not is_events_lane(lanes[n["lane"]]):
+            errs.append(f"node {n.get('id')}: event node in lane {n['lane']}, which is not the events lane "
+                        "(\"kind\": \"events\")")
+        elif not ev and is_events_lane(lanes[n["lane"]]):
+            errs.append(f"node {n.get('id')}: study node in the events lane {n['lane']}; only \"kind\": \"event\" "
+                        "nodes go there")
+        if not ev and not n.get("openalex") and not n.get("url") and not n.get("unlinked"):
+            errs.append(f"node {n.get('id')}: needs 'openalex' (preferred) or 'url' so the box can link to the paper "
+                        "(or 'unlinked': '<why no record was found>')")
+        if n.get("design") is not None and n["design"] not in DESIGN_KO:
+            errs.append(f"node {n.get('id')}: design '{n['design']}' must be one of {list(DESIGN_KO)}")
+        fields = (("title", PILL_W - 10, 11),) if ev else (("title", BOX_W - 8, 12), ("sub", BOX_W - 6, 10.5))
+        for k, limit, size in fields:
+            w = text_px(n.get(k, ""), size)
             if w > limit:
                 errs.append(f"node {n.get('id')}: {k} '{n.get(k)}' is ~{w:.0f}px wide, box fits {limit}px; shorten it "
-                            f"({width_budget(k)})")
+                            f"({width_budget('event' if ev else k)})")
     if len(L["nodes"]) > 50:
         errs.append(f"{len(L['nodes'])} nodes; keep the tree at 20-40 (hard limit 50)")
+    by_id = {n.get("id"): n for n in L["nodes"]}
     for e in L["edges"]:
         if len(e) != 3 or e[0] not in ids or e[1] not in ids or e[2] not in EDGE_TYPES:
-            errs.append(f"bad edge {e}: needs [source_id, target_id, one of s/d/m]")
+            errs.append(f"bad edge {e}: needs [source_id, target_id, one of s/d/m/e]")
+            continue
+        s_ev, t_ev = is_event(by_id[e[0]]), is_event(by_id[e[1]])
+        if e[2] == "e" and (s_ev or not t_ev):
+            errs.append(f"bad edge {e}: an 'e' (evaluates) edge runs from a study node to the event node it evaluates")
+        elif e[2] != "e" and (s_ev or t_ev):
+            errs.append(f"bad edge {e}: event nodes connect only through 'e' edges (study -> event)")
     for r in L.get("rows", []):
         if r.get("level") not in LEVEL_KO:
             errs.append(f"row '{r.get('work')}': level must be one of {list(LEVEL_KO)}")
@@ -73,14 +136,15 @@ def validate(L):
     return errs
 
 
-TEXT_SIZE = {"title": 12, "sub": 10.5}
+TEXT_SIZE = {"title": 12, "sub": 10.5, "event": 11}
+TEXT_LIMIT = {"title": BOX_W - 8, "sub": BOX_W - 6, "event": PILL_W - 10}
 
 
 def width_budget(field):
     """Human-readable box budget, e.g. 'title: about 9 Hangul or 15 Latin characters'."""
-    limit = BOX_W - (8 if field == "title" else 6)
-    size = TEXT_SIZE[field]
-    return f"{field}: about {int(limit // size)} Hangul or {int(limit // (size * 0.6))} Latin characters"
+    limit, size = TEXT_LIMIT[field], TEXT_SIZE[field]
+    name = "event title" if field == "event" else field
+    return f"{name}: about {int(limit // size)} Hangul or {int(limit // (size * 0.6))} Latin characters"
 
 
 def text_px(t, size):
@@ -88,23 +152,67 @@ def text_px(t, size):
     return sum(size * (1.0 if ord(ch) > 0x2E80 else 0.6) for ch in t or "")
 
 
+def wrap(t, width, size):
+    """Greedy line wrap at spaces (long words broken by character), using the text_px estimate."""
+    lines, cur = [], ""
+    for word in (t or "").split():
+        cand = f"{cur} {word}" if cur else word
+        if text_px(cand, size) <= width:
+            cur = cand
+            continue
+        if cur:
+            lines.append(cur)
+        while text_px(word, size) > width and len(word) > 1:
+            k = len(word)
+            while k > 1 and text_px(word[:k], size) > width:
+                k -= 1
+            lines.append(word[:k])
+            word = word[k:]
+        cur = word
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def warnings(L):
     w = []
-    if len(L["lanes"]) > 10:
-        w.append(f"{len(L['lanes'])} lanes (> 8 answer lanes + 2 extras): likely mixed criteria; consolidate again, "
+    topic = mode(L) == "topic"
+    lanes = L["lanes"]
+    if len(lanes) > 10:
+        w.append(f"{len(lanes)} lanes (> 8 answer lanes + 2 extras): likely mixed criteria; consolidate again, "
                  "or explain in axes_note why the field is this split")
     per_lane = Counter(n["lane"] for n in L["nodes"])
-    for i, ln in enumerate(L["lanes"]):
-        if per_lane.get(i, 0) < 2:
-            w.append(f"lane {i} ({lane_name(ln)}) has {per_lane.get(i, 0)} node(s): merge into the nearest lane unless it is a precursor lane")
+    for i, ln in enumerate(lanes):
+        k = per_lane.get(i, 0)
+        if is_events_lane(ln):
+            continue
+        if topic:
+            if k < 2:
+                w.append(f"question lane {i} ({lane_name(ln)}) has {k} stud{'y' if k == 1 else 'ies'}: one study is a "
+                         "thin answer; add evidence or fold the question into another")
+            if not ln.get("answer"):
+                w.append(f"question lane {i} ({lane_name(ln)}) has no 'answer': give the current answer with its key "
+                         "number (shown in the cell at the end of the lane)")
+        elif k < 2:
+            w.append(f"lane {i} ({lane_name(ln)}) has {k} node(s): merge into the nearest lane unless it is a precursor lane")
+    if topic:
+        nq = sum(1 for ln in lanes if not is_events_lane(ln))
+        if nq > MAX_QUESTIONS:
+            w.append(f"{nq} question lanes (> {MAX_QUESTIONS}): a reader holds 3-5 questions; merge or drop the least asked")
+        nodesign = [n["id"] for n in L["nodes"] if not is_event(n) and not n.get("design")]
+        if nodesign:
+            w.append(f"{len(nodesign)} stud{'y' if len(nodesign) == 1 else 'ies'} without 'design' (box falls back to the "
+                     f"lane colour): {', '.join(nodesign)}")
+    for n in L["nodes"]:
+        if not is_event(n) and not n.get("openalex") and not n.get("url"):
+            w.append(f"node {n['id']} has no link (unlinked: {n.get('unlinked')}); its box is not clickable")
     if len(L["nodes"]) > 40:
         w.append(f"{len(L['nodes'])} nodes (> 40): consider dropping minor ones")
-    by_year = defaultdict(set)
-    for n in L["nodes"]:
-        by_year[n["year"]].add(n["id"])
-    for s, t, _ in L["edges"]:
-        ys = next(n["year"] for n in L["nodes"] if n["id"] == s)
-        yt = next(n["year"] for n in L["nodes"] if n["id"] == t)
+    years = {n["id"]: n["year"] for n in L["nodes"]}
+    for s, t, st in L["edges"]:
+        if st == "e":  # a study evaluates an earlier event: backward by design
+            continue
+        ys, yt = years[s], years[t]
         if ys > yt:
             w.append(f"edge {s}->{t} goes backward in time ({ys}>{yt}); edges run from the earlier work to the one that builds on it")
     crossings = edges_through_boxes(L)
@@ -118,9 +226,10 @@ def warnings(L):
         w.append(f"main-path edge {s}->{t} is drawn through {', '.join(repr(v) for v in vias)}, so it reads as if "
                  "the main path ran through that paper: reorder nodes of the same year (list order sets the "
                  "stacking), or drop the edge and name the segment in evidence.main_path_note")
-    thin = {(s, t) for s, t, st, _ in crossings if st != "m"}
+    thin = {(s, t, st) for s, t, st, _ in crossings if st != "m"}
     if thin:
-        w.append(f"{len(thin)} thin s/d edge(s) cross another box (usually harmless; look at the figure once)")
+        kinds = "s/d/e" if any(st == "e" for _, _, st in thin) else "s/d"
+        w.append(f"{len(thin)} thin {kinds} edge(s) cross another box (usually harmless; look at the figure once)")
     return w
 
 
@@ -139,11 +248,42 @@ class Links:
 
 
 # ---------------------------------------------------------------- diagram
-def layout(nodes):
+class Geo:
+    """Column geometry. Lineage mode: the fixed grid (equal lanes, 2-line labels). Topic mode: the events band
+    first and narrower, wider question lanes whose header (Q-number + wrapped question) sets the top margin.
+    An events lane in lineage mode is also drawn first and narrower."""
+
+    def __init__(self, L):
+        lanes = L["lanes"]
+        self.topic = mode(L) == "topic"
+        events = [i for i, ln in enumerate(lanes) if is_events_lane(ln)]
+        self.order = events + [i for i in range(len(lanes)) if i not in events]
+        self.x0 = X0_TOPIC if self.topic else X0
+        lane_w = Q_LANE_W if self.topic else LANE_W
+        self.x, self.w, x = {}, {}, self.x0
+        for i in self.order:
+            self.w[i] = EV_LANE_W if i in events else lane_w
+            self.x[i] = x
+            x += self.w[i]
+        self.width = x + 6
+        self.head, self.top = {}, TOP
+        if self.topic:
+            for i in self.order:
+                self.head[i] = wrap(lane_name(lanes[i]), self.w[i] - 14, 12.5 * 1.04)[:5]
+            self.top = 50 + 16 * (max([len(v) for v in self.head.values()] + [1]) - 1) + 20
+
+
+def answer_lines(L, geo):
+    return {i: wrap(ln["answer"], geo.w[i] - 12 - 2 * ANS_PAD, 12 * 1.06)
+            for i, ln in enumerate(L["lanes"]) if geo.topic and not is_events_lane(ln) and ln.get("answer")}
+
+
+def layout(L, geo=None):
+    geo = geo or Geo(L)
     by = defaultdict(lambda: defaultdict(list))
-    for n in nodes:
+    for n in L["nodes"]:
         by[n["year"]][n["lane"]].append(n)
-    pos, rows, y, prev = {}, [], TOP, None
+    pos, rows, y, prev = {}, [], geo.top, None
     for yr in sorted(by):
         if prev is not None and yr - prev > BREAK_GAP:
             rows.append(("break", y))
@@ -152,16 +292,34 @@ def layout(nodes):
         rows.append((yr, y, h))
         for lane, items in by[yr].items():
             for k, n in enumerate(items):
-                pos[n["id"]] = (X0 + LANE_W * lane + LANE_W / 2, y + 6 + k * STACK)
+                pos[n["id"]] = (geo.x[lane] + geo.w[lane] / 2, y + 6 + k * STACK)
         y += h
         prev = yr
+    ans = answer_lines(L, geo)
+    if ans:
+        h = max(len(v) for v in ans.values()) * ANS_LH + 2 * ANS_PAD + 18
+        rows.append(("answer", y, h))
+        y += h
     return pos, rows, y + 10
 
 
-def edge_curve(pos, s, t):
-    """Cubic Bézier (start, control 1, control 2, end) of the edge s -> t, as drawn."""
+def box_of(n, pos):
+    """(x, y, w, h) of the drawn box; event pills are smaller and centred in the node slot."""
+    cx, y = pos[n["id"]]
+    if is_event(n):
+        return cx - PILL_W / 2, y + (BOX_H - PILL_H) / 2, PILL_W, PILL_H
+    return cx - BOX_W / 2, y, BOX_W, BOX_H
+
+
+def edge_curve(pos, s, t, hs=BOX_W / 2, ht=BOX_W / 2, horizontal=False, side=False):
+    """Cubic Bézier (start, control 1, control 2, end) of the edge s -> t, as drawn.
+    hs/ht: half widths of the two boxes; horizontal: side-to-side (e edges to the events band);
+    side: same column with other boxes in between, so bow out along the right of the column."""
     (sx, sy), (tx, ty) = pos[s], pos[t]
-    if ty > sy:
+    if side:
+        x1, y1, y2 = sx + BOX_W / 2, sy + BOX_H / 2, ty + BOX_H / 2
+        return (x1, y1), (x1 + 16, y1), (x1 + 16, y2), (x1, y2)
+    if ty > sy and not horizontal:
         x1, y1, x2, y2 = sx, sy + BOX_H, tx, ty
         dy = max(24, (y2 - y1) * 0.5)
         return (x1, y1), (x1, y1 + dy), (x2, y2 - dy), (x2, y2)
@@ -170,21 +328,36 @@ def edge_curve(pos, s, t):
         y1, y2 = sy + BOX_H / 2, ty + BOX_H / 2
         return (x1, y1), (x1 + 16, y1), (x1 + 16, y2), (x1, y2)
     left = tx < sx
-    x1 = sx - BOX_W / 2 if left else sx + BOX_W / 2
-    x2 = tx + BOX_W / 2 if left else tx - BOX_W / 2
+    x1 = sx - hs if left else sx + hs
+    x2 = tx + ht if left else tx - ht
     y1, y2 = sy + BOX_H / 2, ty + BOX_H / 2
     xm = (x1 + x2) / 2
     return (x1, y1), (xm, y1), (xm, y2), (x2, y2)
 
 
-def edges_through_boxes(L, samples=40, margin=3):
-    """Edges whose drawn curve crosses a third node's box (reads as if it went through that paper)."""
-    pos, _, _ = layout(L["nodes"])
-    hits = []
+def edge_geometry(L, pos):
+    """[(source, target, type, curve)] for every drawable edge."""
+    topic = mode(L) == "topic"
+    by = {n["id"]: n for n in L["nodes"]}
+    out = []
     for s, t, st in L["edges"]:
         if s not in pos or t not in pos:
             continue
-        p0, c1, c2, p3 = edge_curve(pos, s, t)
+        hs, ht = (PILL_W / 2 if is_event(by[x]) else BOX_W / 2 for x in (s, t))
+        side = False
+        if topic and st != "e" and by[s]["lane"] == by[t]["lane"] and pos[s][1] != pos[t][1]:
+            lo, hi = sorted((pos[s][1], pos[t][1]))
+            side = any(n["lane"] == by[s]["lane"] and n["id"] not in (s, t) and lo < pos[n["id"]][1] < hi
+                       for n in L["nodes"])
+        out.append((s, t, st, edge_curve(pos, s, t, hs, ht, horizontal=st == "e", side=side)))
+    return out
+
+
+def edges_through_boxes(L, samples=40, margin=3):
+    """Edges whose drawn curve crosses a third node's box (reads as if it went through that paper)."""
+    pos, _, _ = layout(L)
+    hits = []
+    for s, t, st, (p0, c1, c2, p3) in edge_geometry(L, pos):
         pts = []
         for k in range(1, samples):
             u = k / samples
@@ -194,56 +367,144 @@ def edges_through_boxes(L, samples=40, margin=3):
         for n in L["nodes"]:
             if n["id"] in (s, t):
                 continue
-            cx, y = pos[n["id"]]
-            x0, x1, y0, y1 = cx - BOX_W / 2 + margin, cx + BOX_W / 2 - margin, y + margin, y + BOX_H - margin
+            bx, by, bw, bh = box_of(n, pos)
+            x0, x1, y0, y1 = bx + margin, bx + bw - margin, by + margin, by + bh - margin
             if any(x0 < px < x1 and y0 < py < y1 for px, py in pts):
                 hits.append((s, t, st, n["id"]))
     return hits
 
 
+def svg_legend(L, W, y0):
+    """Legend drawn inside the SVG (so the report PNG carries it): study designs, and in topic mode the edge
+    types and the answer cell. Returns (svg fragments, height)."""
+    topic = mode(L) == "topic"
+    used = {n.get("design") for n in L["nodes"]}
+    items = [("head", "연구 설계")] + [("design", d) for d in DESIGN_KO if topic or d in used]
+    if topic:
+        types = [t for t in ("s", "d", "m", "e") if any(e[2] == t for e in L["edges"])]
+        if types:
+            items += [("head", "연결선")] + [("edge", t) for t in types]
+        if any(ln.get("answer") for ln in L["lanes"] if not is_events_lane(ln)):
+            items += [("answer", "")]
+    o, x, y = [], 10, y0 + 20
+    for kind, key in items:
+        label = {"head": key, "design": DESIGN_KO.get(key, ""), "edge": EDGE_KO.get(key, ""),
+                 "answer": "지금의 답 (각 질문 열의 끝)"}[kind]
+        lw = text_px(label, 11.5 * 0.92)
+        iw = lw + (8 if kind == "head" else 30) + 14
+        if x + iw > W - 8 and x > 10:
+            x, y = 10, y + 22
+        if kind == "head":
+            o.append(f'<text x="{x}" y="{y}" class="lg lh">{escape(label)}</text>')
+            x += lw + 12
+            continue
+        if kind == "design":
+            o.append(f'<rect x="{x}" y="{y-10}" width="22" height="12" rx="3" '
+                     f'style="fill:color-mix(in srgb, var(--d-{key}) 12%, var(--surface));stroke:var(--d-{key})" stroke-width="1.3"/>')
+        elif kind == "edge":
+            st = {"s": "stroke:var(--edge)", "d": "stroke:var(--edge)", "m": "stroke:var(--accent)",
+                  "e": "stroke:var(--muted)"}[key]
+            dash = {"d": ' stroke-dasharray="4 4"', "e": ' stroke-dasharray="1.5 3.5"'}.get(key, "")
+            o.append(f'<line x1="{x}" x2="{x+22}" y1="{y-4}" y2="{y-4}" style="{st}" '
+                     f'stroke-width="{2.4 if key == "m" else 1.4}"{dash}/>')
+        else:
+            o.append(f'<rect x="{x}" y="{y-11}" width="22" height="14" rx="4" class="ansbox"/>')
+        o.append(f'<text x="{x+30}" y="{y}" class="lg">{escape(label)}</text>')
+        x += iw
+    return o, y - y0 + 14
+
+
 def svg(L, links):
-    lanes, nodes, edges = L["lanes"], L["nodes"], L["edges"]
-    pos, rows, H = layout(nodes)
-    W = X0 + LANE_W * len(lanes) + 6
-    o = [f'<svg id="tree" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="group" '
-         f'aria-label="계보도: 열은 계열, 행은 연도. 상자를 누르면 원문이 열립니다" xmlns="http://www.w3.org/2000/svg">',
+    lanes, nodes = L["lanes"], L["nodes"]
+    geo = Geo(L)
+    topic = geo.topic
+    pos, rows, H = layout(L, geo)
+    W = geo.width
+    legend, lh = ([], 0)
+    if topic or any(n.get("design") for n in nodes):
+        legend, lh = svg_legend(L, W, H)
+    has_e = any(e[2] == "e" for e in L["edges"])
+    aria = ("질문 지도: 열은 독자의 질문, 맨 왼쪽 띠는 정책·사건, 행은 연도. 상자를 누르면 원문이 열립니다" if topic
+            else "계보도: 열은 계열, 행은 연도. 상자를 누르면 원문이 열립니다")
+    o = [f'<svg id="tree" viewBox="0 0 {W} {H + lh}" width="{W}" height="{H + lh}" role="group" '
+         f'aria-label="{aria}" xmlns="http://www.w3.org/2000/svg">',
          '<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
          '<path d="M0,0 L10,5 L0,10 z" style="fill:var(--edge)"/></marker>'
          '<marker id="arm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
-         '<path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs>']
-    for i, ln in enumerate(lanes):
-        x = X0 + LANE_W * i
-        if i % 2 == 0:
-            o.append(f'<rect x="{x}" y="0" width="{LANE_W}" height="{H}" style="fill:var(--band)"/>')
-        cx = x + LANE_W / 2
-        o.append(f'<rect x="{x+10}" y="12" width="{LANE_W-20}" height="4" rx="2" style="fill:var(--c{i})"/>')
-        l1, l2 = (ln["label"] + ["", ""])[:2] if isinstance(ln["label"], list) else (ln["label"], "")
+         '<path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker>'
+         + ('<marker id="are" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
+            '<path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker>' if has_e else "")
+         + '</defs>']
+    qn = question_numbers(L)
+    for k, i in enumerate(geo.order):
+        ln = lanes[i]
+        x, w = geo.x[i], geo.w[i]
+        if k % 2 == 0:
+            o.append(f'<rect x="{x}" y="0" width="{w}" height="{H}" style="fill:var(--band)"/>')
+        cx = x + w / 2
+        o.append(f'<rect x="{x+10}" y="12" width="{w-20}" height="4" rx="2" style="fill:var(--c{i})"/>')
+        if topic:
+            if i in qn:
+                o.append(f'<text x="{cx}" y="32" class="qn">Q{qn[i]}</text>')
+            o.extend(f'<text x="{cx}" y="{50 + 16 * j}" class="lt">{escape(line)}</text>'
+                     for j, line in enumerate(geo.head[i]))
+            continue
+        label = ln.get("label") or "정책·사건"
+        l1, l2 = (label + ["", ""])[:2] if isinstance(label, list) else (label, "")
         o.append(f'<text x="{cx}" y="36" class="lt">{escape(l1)}</text><text x="{cx}" y="52" class="lt">{escape(l2)}</text>')
+    ans = answer_lines(L, geo)
     for r in rows:
         if r[0] == "break":
             y = r[1] + 13
             o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="brk"/><text x="8" y="{y-4}" class="yr sm">(시간 생략)</text>')
             continue
         yr, y, h = r
+        if yr == "answer":
+            o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="sep"/>'
+                     f'<text x="8" y="{y+30}" class="yr">지금의</text><text x="8" y="{y+47}" class="yr">답</text>')
+            ch = h - 18
+            for i, lines in ans.items():
+                ax, aw = geo.x[i] + 6, geo.w[i] - 12
+                ty = y + 9 + (ch - len(lines) * ANS_LH) / 2 + 12
+                text = "".join(f'<text x="{ax + aw / 2}" y="{ty + j * ANS_LH}" class="at">{escape(t)}</text>'
+                               for j, t in enumerate(lines))
+                o.append(f'<g class="ans" data-lane="{i}"><rect x="{ax}" y="{y+9}" width="{aw}" height="{ch}" rx="8" '
+                         f'class="ansbox"/>{text}</g>')
+            continue
         o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="sep"/><text x="8" y="{y+28}" class="yr">{yr}</text>')
-    for s, t, st in edges:
-        p0, c1, c2, p3 = edge_curve(pos, s, t)
+    for s, t, st, (p0, c1, c2, p3) in edge_geometry(L, pos):
         d = f"M{p0[0]},{p0[1]} C{c1[0]},{c1[1]} {c2[0]},{c2[1]} {p3[0]},{p3[1]}"
-        cls = {"s": "e", "d": "e dash", "m": "e main"}[st]
-        o.append(f'<path d="{d}" class="{cls}" data-s="{s}" data-t="{t}" marker-end="url(#{"arm" if st == "m" else "ar"})"/>')
+        cls = {"s": "e", "d": "e dash", "m": "e main", "e": "e ev"}[st]
+        marker = {"m": "arm", "e": "are"}.get(st, "ar")
+        o.append(f'<path d="{d}" class="{cls}" data-s="{s}" data-t="{t}" marker-end="url(#{marker})"/>')
     for n in nodes:
         cx, y = pos[n["id"]]
         x = cx - BOX_W / 2
         url, kind, info = links.of(n.get("openalex"), n.get("url"))
-        label = f'{n["title"]}, {n["sub"]}. {info.get("venue") or ""}. 새 탭에서 원문 열기'
-        cls = "node" + (" key" if n.get("key") else "") + (" pre" if kind == "preprint" else "")
         lane = n["lane"]
-        o.append(f'<a href="{escape(url)}" target="_blank" rel="noopener" class="{cls}" data-id="{escape(n["id"])}" '
-                 f'data-lane="{lane}" aria-label="{escape(label)}">'
-                 f'<rect x="{x}" y="{y}" width="{BOX_W}" height="{BOX_H}" rx="6" '
-                 f'style="fill:color-mix(in srgb, var(--c{lane}) {26 if n.get("key") else 12}%, var(--surface));stroke:var(--c{lane})"/>'
-                 f'<text x="{cx}" y="{y+16}" class="nt">{escape(n["title"])}</text>'
-                 f'<text x="{cx}" y="{y+30}" class="ns">{escape(n["sub"])}</text></a>')
+        if is_event(n):
+            bx, by, bw, bh = box_of(n, pos)
+            label = f'{n["title"]} ({n["year"]})' + (". 새 탭에서 출처 열기" if url else "")
+            inner = (f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" rx="{bh / 2}" '
+                     f'style="fill:color-mix(in srgb, var(--c{lane}) 16%, var(--surface));stroke:var(--c{lane})"/>'
+                     f'<text x="{cx}" y="{by + 16}" class="et">{escape(n["title"])}</text>')
+            cls = "node ev"
+        else:
+            label = (f'{n["title"]}, {n["sub"]}. {info.get("venue") or ""}. 새 탭에서 원문 열기' if url
+                     else f'{n["title"]}, {n["sub"]}. 연결된 원문 없음')
+            cls = "node" + (" key" if n.get("key") else "") + (" pre" if kind == "preprint" else "")
+            col = f"var(--d-{n['design']})" if n.get("design") in DESIGN_KO else f"var(--c{lane})"
+            inner = (f'<rect x="{x}" y="{y}" width="{BOX_W}" height="{BOX_H}" rx="6" '
+                     f'style="fill:color-mix(in srgb, {col} {26 if n.get("key") else 12}%, var(--surface));stroke:{col}"/>'
+                     f'<text x="{cx}" y="{y+16}" class="nt">{escape(n["title"])}</text>'
+                     f'<text x="{cx}" y="{y+30}" class="ns">{escape(n["sub"])}</text>')
+        dz = f' data-design="{escape(n["design"])}"' if n.get("design") in DESIGN_KO else ""
+        attrs = f'class="{cls}" data-id="{escape(n["id"])}" data-lane="{lane}"{dz} aria-label="{escape(label)}"'
+        if url:
+            o.append(f'<a href="{escape(url)}" target="_blank" rel="noopener" {attrs}>{inner}</a>')
+        else:
+            o.append(f'<g tabindex="0" {attrs}>{inner}</g>')
+    o.extend(legend)
     o.append("</svg>")
     return "\n".join(o)
 
@@ -253,14 +514,25 @@ def node_data(L, links):
     for n in L["nodes"]:
         url, kind, info = links.of(n.get("openalex"), n.get("url"))
         fa, na = info.get("first_author") or "", info.get("n_authors") or 1
-        out[n["id"]] = {"t": info.get("title") or n["title"], "lane": n["lane"], "note": n.get("note", ""),
-                        "kind": kind, "venue": info.get("venue") or "", "year": info.get("year") or n["year"],
-                        "cites": info.get("cites"), "by": (fa + (" 외" if na > 1 else "")) if fa else n["sub"]}
+        d = {"t": info.get("title") or n["title"], "lane": n["lane"], "note": n.get("note", ""),
+             "kind": kind, "venue": info.get("venue") or "", "year": info.get("year") or n["year"],
+             "cites": info.get("cites"), "by": (fa + (" 외" if na > 1 else "")) if fa else n.get("sub", "")}
+        if n.get("design") in DESIGN_KO:
+            d["dz"] = DESIGN_KO[n["design"]]
+        if is_event(n):
+            d["ev"] = True
+        if not url:
+            d["nolink"] = True
+        out[n["id"]] = d
     return out
 
 
 def lane_name(ln):
-    return " ".join(ln["label"]).replace("· ", "·") if isinstance(ln["label"], list) else ln["label"]
+    """Lane title: the question when the lane has one (topic mode), else the label."""
+    if ln.get("question"):
+        return ln["question"]
+    label = ln.get("label") or ("정책·사건" if is_events_lane(ln) else "")
+    return " ".join(label).replace("· ", "·") if isinstance(label, list) else label
 
 
 # ---------------------------------------------------------------- sections
@@ -271,6 +543,12 @@ def facts(L, work, data):
     n_full = sum(1 for r in L.get("rows", []) if r.get("level") == "fulltext")
     n_read = len(L["meta"].get("papers_read", []))
     seed = L["meta"].get("seed_label", "")
+    if mode(L) == "topic":
+        nev = sum(1 for n in L["nodes"] if is_event(n))
+        parts = [f"독자의 질문 <b>{len(question_numbers(L))}</b>", f"연구 <b>{len(L['nodes']) - nev}편</b>",
+                 f"정책·사건 <b>{nev}</b>" if nev else "", f"직접 읽은 원문 <b>{n_read}편</b>" if n_read else "",
+                 f"본문 근거가 있는 항목 <b>{n_full}</b>" if n_full else ""]
+        return "".join(f"<span>{p}</span>" for p in parts if p)
     parts = [f"씨앗 <b>{escape(seed)}</b>" if seed else "",
              f"참고문헌 <b>{roles.get('backward', 0)}</b>", f"인용 논문 <b>{roles.get('forward', 0)}</b>",
              f"분야 참고문헌 <b>약 {len(refs):,}</b>" if refs else "",
@@ -316,6 +594,33 @@ def stage_table(L):
                     f'<td>{escape(reps)}</td><td>{md(ln.get("limit", "")) or "–"}</td></tr>')
     return ('<div class="scroll"><table><thead><tr><th>계열</th><th>시기</th><th>방식</th><th>대표 연구</th>'
             '<th>핵심 한계</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table></div>")
+
+
+def study_ref(n):
+    """'Hirsch 2000 [5]': the subtitle plus the report's reference number when the node has one."""
+    return n["sub"] + (f' [{n["ref"]}]' if n.get("ref") not in (None, "") else "")
+
+
+def question_table(L, links):
+    """Topic mode: one row per reader question: question, current answer, key studies (linked, with design)."""
+    by_lane = defaultdict(list)
+    for n in L["nodes"]:
+        by_lane[n["lane"]].append(n)
+    rows = []
+    for i, k in question_numbers(L).items():
+        ln = L["lanes"][i]
+        studies = []
+        for n in sorted(by_lane.get(i, []), key=lambda n: n["year"]):
+            url = links.of(n.get("openalex"), n.get("url"))[0]
+            name = escape(study_ref(n))
+            dz = f' <span class="dz">{escape(DESIGN_KO[n["design"]])}</span>' if n.get("design") in DESIGN_KO else ""
+            name = f'<a href="{escape(url)}" target="_blank" rel="noopener">{name}</a>' if url else name
+            studies.append(f"<li>{name}{dz}</li>")
+        rows.append(f'<tr><td class="w"><span class="chip"><i style="background:var(--c{i})"></i>Q{k}</span> '
+                    f'{md(lane_name(ln))}</td><td class="answer">{md(ln.get("answer", "")) or "–"}</td>'
+                    f'<td><ul class="studies">{"".join(studies)}</ul></td></tr>')
+    return ('<div class="scroll"><table><thead><tr><th>질문</th><th>지금의 답</th><th>핵심 연구 (설계)</th></tr></thead>'
+            '<tbody>' + "".join(rows) + "</tbody></table></div>")
 
 
 def trends_html(L):
@@ -371,8 +676,9 @@ def evidence(L, data):
 
 
 def table(L, links):
+    lane_col = "질문" if mode(L) == "topic" else "계열"
     out = ['<div class="scroll"><table><thead><tr><th>연도</th><th>연구 (원문 링크)</th><th>무엇을 했나</th>'
-           '<th>앞 세대에서 바꾼 것</th><th>계열</th><th>확인 수준</th></tr></thead><tbody>']
+           f'<th>앞 세대에서 바꾼 것</th><th>{lane_col}</th><th>확인 수준</th></tr></thead><tbody>']
     for r in L.get("rows", []):
         url, kind, info = links.of(r.get("openalex"), r.get("url"))
         lane = r.get("lane")
@@ -478,9 +784,11 @@ def expansion_summary(L, data, xdata):
 
 def lane_buttons(L):
     b = ['<button type="button" class="lanebtn" data-lane="all" aria-pressed="true">전체</button>']
+    qn = question_numbers(L) if mode(L) == "topic" else {}
     for i, ln in enumerate(L["lanes"]):
+        name = f"Q{qn[i]}. {lane_name(ln)}" if i in qn else lane_name(ln)
         b.append(f'<button type="button" class="lanebtn" data-lane="{i}" aria-pressed="false">'
-                 f'<i style="background:var(--c{i})"></i>{escape(lane_name(ln))}</button>')
+                 f'<i style="background:var(--c{i})"></i>{escape(name)}</button>')
     return "".join(b)
 
 
@@ -494,13 +802,20 @@ def legend_line(style):
 ASSETS = Path(__file__).with_name("assets")
 
 
-def page(L, work, data, xdata, links):
+def assets(L, links):
     css = (ASSETS / "page.css").read_text(encoding="utf-8")
     js = (ASSETS / "page.js").read_text(encoding="utf-8")
     js = (js.replace("__NODES__", json.dumps(node_data(L, links), ensure_ascii=False))
             .replace("__EDGES__", json.dumps([[s, t] for s, t, _ in L["edges"]]))
             .replace("__LANES__", json.dumps([lane_name(l) for l in L["lanes"]], ensure_ascii=False))
             .replace("__KIND__", json.dumps(KIND_KO, ensure_ascii=False))).replace("</", "<\\/")
+    return css, js
+
+
+def page(L, work, data, xdata, links):
+    if mode(L) == "topic":
+        return topic_page(L, work, data, xdata, links)
+    css, js = assets(L, links)
     m = L["meta"]
     n_pre = sum(1 for n in L["nodes"] if links.of(n.get("openalex"), n.get("url"))[1] == "preprint")
     seeds = " ".join(m.get("seed_ids", [])) or "W..."
@@ -552,6 +867,63 @@ scholarly-access-agent lineage analyze data_x 2
 scholarly-access-agent lineage links data/links.json --from-lineage lineage.json
 scholarly-access-agent lineage page .</pre>
 </section>
+</div>
+<script>{js}</script>
+"""
+
+
+def topic_page(L, work, data, xdata, links):
+    """Topic mode: lanes are the reader's questions. Sections without content (no citation corpus,
+    no rows, no search log) are left out instead of shown empty."""
+    css, js = assets(L, links)
+    m = L["meta"]
+    n_pre = sum(1 for n in L["nodes"] if links.of(n.get("openalex"), n.get("url"))[1] == "preprint")
+    limits = "".join(f"<li>{md(x)}</li>" for x in L.get("limits", []))
+    pre = (f'<div class="legend"><span><svg width="26" height="14" aria-hidden="true"><rect x="1" y="1" width="24" '
+           f'height="12" rx="3" style="fill:none;stroke:var(--muted)" stroke-dasharray="4 2"/></svg>'
+           f'저널판 없음 (프리프린트 {n_pre}편)</span></div>') if n_pre else ""
+    sec = [f"""<section>
+  <div class="col"><h2>질문 지도</h2>
+  <p>열은 이 주제를 읽는 사람이 묻는 질문, 맨 왼쪽 좁은 띠는 연구가 평가한 정책·사건, 행은 연도입니다(연도 간격은 등간격이 아님). 상자 색은 연구 설계이고, 각 질문 열 맨 아래의 굵은 칸이 <b>지금의 답</b>입니다. 상자에 마우스를 올리면 연결된 연구와 사건만 남고 요약이 뜹니다. <b>상자를 누르면 원문이 새 탭에서 열립니다.</b></p></div>
+  <div class="controls" role="group" aria-label="질문 강조"><span class="lab">질문 강조</span>{lane_buttons(L)}</div>
+  <div class="stage" id="stage"><div class="scroll">{svg(L, links)}</div><div class="tip" id="tip" hidden></div></div>
+  {pre}
+</section>""", f'<section><div class="col"><h2>질문별 지금의 답</h2></div>{question_table(L, links)}</section>']
+    if L.get("axes"):
+        sec.append(f'<section class="col"><h2>답이 갈리는 지점</h2>{axes(L)}</section>')
+    if L.get("verdict") or L.get("trends") or L.get("one_line"):
+        trends = ("<h3>주요 흐름</h3>" + trends_html(L)) if (L.get("trends") or L.get("one_line")) else ""
+        sec.append(f'<section><div class="col"><h2>지금의 결론</h2></div>'
+                   f'{verdict(L) if L.get("verdict") else ""}<div class="col">{trends}</div></section>')
+    if (data / "analysis.json").exists():
+        sec.append(f'<section class="col"><h2>데이터로 본 근거</h2>{evidence(L, data)}</section>')
+    if L.get("rows"):
+        sec.append('<section><div class="col"><h2>근거 표</h2><p>연구 이름을 누르면 원문이 열립니다. "본문 확인"은 원문의 해당 절이나 '
+                   f'페이지를 직접 읽은 항목입니다.</p></div>{table(L, links)}</section>')
+    if L.get("vocabulary") or (data / "queries.json").exists():
+        sec.append(f'<section><div class="col"><h2>검색 범위</h2>{vocabulary(L)}</div>{search_log(data)}</section>')
+    sec.append(f"""<section class="col">
+  <h2>이 분석의 한계</h2><ul>{limits}</ul>
+  <h3>다시 그리기</h3>
+  <pre class="cmd">scholarly-access-agent lineage check .
+scholarly-access-agent lineage page .
+scholarly-access-agent lineage report-section . --chapter &lt;n&gt;</pre>
+</section>""")
+    body = "\n".join(sec)
+    return f"""<meta charset="utf-8">
+<title>{escape(m["page_title"])}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>{css}</style>
+<div class="wrap">
+<header class="col">
+  <div class="eyebrow">주제 지도 · {escape(m.get("date", ""))} 기준</div>
+  <h1>{md(m["headline"])}</h1>
+  <p class="lede">{md(m.get("lede", ""))}</p>
+  <div class="facts">{facts(L, work, data)}</div>
+</header>
+{body}
 </div>
 <script>{js}</script>
 """

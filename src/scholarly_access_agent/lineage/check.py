@@ -30,7 +30,9 @@ def main(argv=None) -> int:
     if not errs:
         for w in warnings(L):
             print("warning:", w)
-    print(f"box budget: {width_budget('title')}; {width_budget('sub')}")
+    events = any(n.get("kind") == "event" for n in L.get("nodes", []))
+    print(f"box budget: {width_budget('title')}; {width_budget('sub')}"
+          + (f"; {width_budget('event')}" if events else ""))
     print(f"{len(errs)} problem(s)" + ("" if errs else f"; {len(L['nodes'])} nodes, {len(L['edges'])} edges, "
                                        f"{len(L['lanes'])} lanes"))
     return 1 if errs else 0

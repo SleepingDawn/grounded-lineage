@@ -11,6 +11,17 @@ Citation data finds candidates; reading decides the lineage. `scholarly-access-a
 
 **REQUIRED SUB-SKILL:** snu-library-scholarly-access, for reading (steps 4 and 6), evidence labels, version priority and the PDF report.
 
+## Two modes: decide before step 1
+
+| The user asks about | Mode | Lanes are | Example |
+|---|---|---|---|
+| where a **method or concept** came from and how it branched | `lineage` (default) | the answers to 1–3 questions that split the method (branch axes, below) | "LES 열전도 계산법의 계보", "MLIP 장거리 상호작용의 흐름" |
+| a **topic**, policy or phenomenon in a narrowed scope ("X 연구 흐름", "X에 대해 정리") | `topic` (`meta.mode: "topic"`) | the **reader's questions** about the topic, in the order the report answers them | "도시 대중교통 정기권 연구 흐름" |
+
+In topic mode do not invent themes as lanes. Write 3–5 questions a reader of this topic would ask — taken from the user's words first, then from what the reviews and policy debates ask (effect size, design or price, alternatives, who gains, what it means for the user's setting). Each question is one lane with a `question` and, once read, an `answer` (current answer with its key number). Real-world events the studies evaluate (policies, launches, programmes) go in one `"kind": "events"` lane, linked by `e` edges from the studies that evaluate them; give every study a `design` (model, observational, experiment, quasi, review). The report body uses the same questions as its sections (snu-library `report-pdf.md`, topic reports). Schema: `references/lineage-json.md`; worked example: `examples/transit/lineage.json`.
+
+When unsure which mode fits, use topic mode if the user named a subject rather than a method, and say which mode in one line. Steps 1–10 are the same in both modes; in topic mode, step 1 seeds are the most-cited reviews or founding studies of the topic, and "Branch axes and lanes" below is replaced by the question lanes above.
+
 ## Setup
 
 - Commands below are `scholarly-access-agent lineage <command>`; the installed executable path is in `references/local-runtime.md`. `lineage <command> -h` lists options.
@@ -85,7 +96,7 @@ Abstracts suffice for follow-up and frontier nodes whose role the abstract state
 
 A claim about paper X read in review Y is `fulltext` with `evidence: "Y §III.1"`. More than ~5 papers: one subagent per batch, each returning section/page-grounded notes; spawn them with the `reader` row of snu-library-scholarly-access `references/research-models.md`.
 
-## Branch axes and lanes: emerge, then consolidate
+## Branch axes and lanes: emerge, then consolidate (lineage mode)
 
 1. *During steps 3–6*: for each paper, write one line "what it changed relative to its predecessor" and group the lines into provisional branch candidates. No limit on their number.
 2. *Before writing `lineage.json` (step 7), consolidate once*:

@@ -6,7 +6,15 @@ Structure:
 2. Summary (한눈에 보기): 4–7 bullets, one claim each, with its key number and unit.
 3. Body under `##`/`###` (they become the table of contents and PDF outline). Compare items in pipe tables: one row per item, short cells, units in the header or cell; split tables wider than about 7 columns.
 4. Put the key conclusion or current verdict in a `>` quote: it becomes a callout box.
-5. Evidence status per item (**본문 확인 (섹션/페이지)**, **초록만 확인**, **미확인**), a change log when revising, then sources with links; mark preprints.
+5. Evidence status per item (**본문 확인 (섹션/페이지)**, **초록만 확인**, **미확인**) and its source type (저널 · 학회 논문 · 학회 초록 · 학위논문 · preprint · 보고서), a change log when revising, then sources with links; mark preprints and 예비 근거.
+
+**Topic reports** (a subject, policy or phenomenon rather than a method's genealogy): the body follows the reader's questions, not a taxonomy of the literature.
+- One `##` section per question, 3–5 questions, in the order the summary answers them; the questions are the same as the topic-mode lanes of a research flow map when there is one (research-lineage).
+- Each section opens with its one-line answer (with the key number), then an evidence table: 연구 | 장소·대상 | 설계 | 결과 (수치·단위) | 근거 상태. Rows ordered by design strength or year, so effect sizes can be compared at a glance.
+- Disagreements go in the section where they bear on the answer, with both sides cited.
+- The full per-paper list goes last, as an appendix grouped by question.
+- Preliminary items (conference abstracts, preprints, abstract-only, per research-workflow.md "Source quality") sit below the peer-reviewed rows of a table, labelled 예비 근거, or in a separate "최신·예비 근거" block; the one-line answer never rests on them alone.
+- A grouping of the literature that you made up yourself may appear only as a labelled framing ("이 보고서의 정리 방식"), at most three groups, and never as the section structure.
 
 Authoring: pipe tables only; figures as local PNG/JPG inside the report folder (`![caption](figs/x.png)`), since SVG and remote images are skipped; no raw HTML except `<sub>`, `<sup>`, `<br>`. `**bold**` before a Korean particle and Unicode sub/superscripts (H₂, Å³) are handled. Interactive figure: give the static image the title `"interactive=page.html"` (a local HTML page in the report folder, e.g. the research-lineage page) and the HTML report inlines that clickable page in place of the image; a PDF keeps the PNG. `lineage report-section` writes its figure this way.
 

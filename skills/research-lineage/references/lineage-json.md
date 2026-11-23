@@ -1,11 +1,12 @@
 # lineage.json
 
 The agent-curated input to `lineage page` and `lineage report-section`. Lives in the topic work folder next to `data/`.
-Text fields accept `**bold**`; everything else is escaped. Full example: `examples/les/lineage.json`.
+Text fields accept `**bold**`; everything else is escaped. Full examples: `examples/les/lineage.json` (lineage mode), `examples/transit/lineage.json` (topic mode, below).
 
 ```jsonc
 {
   "meta": {
+    "mode": "lineage",                        // "lineage" (default) or "topic": lanes = the reader's questions (below)
     "page_title": "LES 계보도",              // 2–4 word name, used as <title>
     "slug": "les_lineage",                    // output file name
     "date": "2026-11-20",
@@ -26,11 +27,15 @@ Text fields accept `**bold**`; everything else is escaped. Full example: `exampl
   ],
   "nodes": [
     {"id": "g4", "lane": 3, "year": 2021, "title": "4G-HDNNP", "sub": "Ko 2021",   // sub = first author + year
-     "openalex": "W3086372695",              // or "url" when the work is not in OpenAlex
+     "openalex": "W3086372695",              // or "url" when the work is not in OpenAlex; neither found:
+                                             // "unlinked": "why" (box not clickable; check warns)
+     "design": "model",                      // optional: model | observational | experiment | quasi | review
+     "ref": 12,                               // optional: the report's reference number ("Ko 2021 [12]")
      "note": "one line: what it changed",    // shown in the tooltip
      "key": true}                             // optional: the seed or the focus paper
   ],
-  "edges": [ ["cent", "g4", "s"] ],          // earlier -> later; s = builds on, d = conceptual, m = main-path order
+  "edges": [ ["cent", "g4", "s"] ],          // earlier -> later; s = builds on, d = conceptual, m = main-path order;
+                                             // e = evaluates: study -> the event node it evaluates (topic mode)
   "link_overrides": {"W4323721113": {"url": "https://proceedings.mlr.press/…", "kind": "proceedings", "venue": "ICML 2023"}},
   "axes": [                                   // the questions that split the field
     {"question": "① 전하를 어디서 얻는가",
@@ -69,6 +74,38 @@ Text fields accept `**bold**`; everything else is escaped. Full example: `exampl
 
 Evidence labels on the page and in the report chapter follow snu-library-scholarly-access: `fulltext` = **본문 확인**, `abstract` = **초록만 확인**, `metadata` = **미확인**.
 
-`lineage page` and `lineage report-section` refuse to render and lists problems when: a top-level key is missing, a lane index is out of range, a node lacks `openalex`/`url`, a box title or subtitle is wider than the box (Hangul counts about twice a Latin letter), more than 50 nodes, an edge points at an unknown node or has a type other than s/d/m, a row level is not one of the three values, or there are more than 12 lanes.
+## Topic mode
 
-It prints warnings (and still renders) for more than 10 lanes, lanes with fewer than 2 nodes, more than 40 nodes, and edges that run backward in time.
+For a topic question ("도시 대중교통 정기권은 효과가 있나") the lanes are the **reader's questions**, not the agent's themes. Set `"meta": {"mode": "topic"}`. Everything above still applies; seed, corpus and widening fields are optional.
+
+- **Question lanes**: `question` (short; it replaces the label as the lane header, numbered Q1, Q2, … in lane order) and `answer` (1–2 lines: the current answer with its key number). The answer is drawn as a bold, tinted **지금의 답** cell at the end of the lane, after the latest year. `label` is optional.
+- **Events lane** (at most one): `{"kind": "events", "label": "정책·사건"}` holds the real-world events the studies evaluate: nodes with `"kind": "event"`, `id`, `year`, `title` (a pill label: about 8 Hangul or 13 Latin characters), optional `url` and `note`. It is drawn as the first, narrower column with pill markers. Link a study to the event it evaluates with an `e` edge (thin dotted, muted); events take no other edges. An events lane in lineage mode is drawn the same way.
+- **Design**: give every study a `design`. Boxes are coloured by design, with a legend (모형·이론, 관찰자료, 실험(무작위), 준실험(DiD·합성대조), 리뷰) drawn inside the figure, so the report PNG carries it too. In lineage mode `design` is optional and colours only the boxes that have it.
+- **Same-lane edges** that would cross a box in between bow out along the right side of the column.
+- **Report chapter**: `## n. 질문별 연구 지도`. Its first table is *question | current answer | key studies* (`sub`, `[ref]` when set, design), then one line listing the events and the studies that evaluate them. Sections with no content (axes, trends, rows, data evidence without `analysis.json`) are left out; the page leaves them out the same way.
+
+```jsonc
+{
+  "meta": {"mode": "topic", "page_title": "대중교통 정기권 지도", "slug": "transit_passes_map", "date": "2026-11-23",
+           "headline": "…", "lede": "…", "data_dir": "data"},
+  "lanes": [
+    {"kind": "events", "label": "정책·사건"},
+    {"question": "정기권·무제한권은 이용을 얼마나 늘리나?", "answer": "단기 +2.7~12%, 주로 기존 이용자 통행 증가"},
+    {"question": "가격은 어떻게 정하나?", "answer": "가입료+한계비용 이부요금에 소득·혼잡 반영"}
+  ],
+  "nodes": [
+    {"id": "ev_metrocard", "kind": "event", "lane": 0, "year": 1998, "title": "MetroCard", "note": "뉴욕 무제한 승차권 도입"},
+    {"id": "hirsch", "lane": 1, "year": 2000, "title": "MetroCard 평가", "sub": "Hirsch 2000",
+     "openalex": "W1989650281", "design": "observational", "ref": 7},
+    {"id": "sherman", "lane": 2, "year": 1967, "title": "클럽형 정기권", "sub": "Sherman 1967",
+     "openalex": "W577854925", "design": "model"}
+  ],
+  "edges": [["hirsch", "ev_metrocard", "e"]]
+}
+```
+
+## Validation (`lineage check`)
+
+`lineage page` and `lineage report-section` refuse to render and list problems when: a top-level key is missing, `meta.mode` is not lineage/topic, a lane index is out of range, a study node lacks `openalex`/`url` and gives no `unlinked` reason, a box title or subtitle (or event pill title) is wider than the box (Hangul counts about twice a Latin letter), more than 50 nodes, an edge points at an unknown node or has a type other than s/d/m/e, an `e` edge does not run from a study to an event, an event node is joined by a non-`e` edge, an event node sits outside the events lane or a study node inside it, there is more than one events lane, a `design` is not one of the five values, a row level is not one of the three values, or there are more than 12 lanes. In topic mode, also when a non-event lane has no `question`.
+
+It prints warnings (and still renders) for more than 10 lanes, lanes with fewer than 2 nodes, unlinked study nodes, more than 40 nodes, edges that run backward in time (`e` edges excepted), and edges drawn through another box. In topic mode, also for a question lane without `answer`, more than 5 question lanes, and studies without `design`.
