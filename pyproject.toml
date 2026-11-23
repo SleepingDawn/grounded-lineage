@@ -3,9 +3,9 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "SNU-library-scholarly-access"
+name = "grounded-lineage"
 version = "0.6.0"
-description = "SNU Library scholarly access tool"
+description = "Full-text-grounded research lineage, evidence tracing and question-led figures (SNU library access)"
 requires-python = ">=3.10"
 dependencies = ["playwright==1.65.2", "pypdf==7.1.0", "fonttools==4.68.0", "mcp==1.30.0", "reportlab==4.4.4", "markdown-it-py==4.0.0", "networkx==3.4.2"]
 
