@@ -83,7 +83,7 @@ The `calculation` playbook turns a card or a paper's method into a calculation p
 
 ## How a run works
 
-1. **Search.** Native web/academic search finds candidates; queries and sources are logged. Lineage runs collect the OpenAlex neighbourhood and test boolean queries for precision, recall on a frozen gold set and novelty.
+1. **Search.** Native web/academic search finds candidates; queries and sources are logged. Every review except a quick search then runs `lineage expand` on 3–5 central seeds: one hop of their references and citing papers, ranked by how many seeds each connects to, so papers the search missed are screened too. Lineage runs collect the OpenAlex neighbourhood and test boolean queries for precision, recall on a frozen gold set and novelty.
 2. **Resolve versions.** `resolve <DOI>` gives the Crossref record, Unpaywall open copies and ranked reading routes. Journal version first; preprint only as a labelled fallback.
 3. **Read.** Text first: `read_url` for open-access HTML (outline, then terms, then sections); `download_pdf` + `read_pdf` for paywalled papers, page citations or figures. More than ~15 papers go to parallel reader sub-agents whose briefs open with the byte-identical reader pack (`pack reader`); readers write records to files and return at most 10 lines (file handback).
 4. **Evidence records.** One record per paper: `access` (`fulltext_pdf`, `fulltext_html`, `excerpts`, `secondary`, `abstract_only`, `unavailable`), version read, criteria with locators, and every reportable number in `results[]` (value, range, unit, condition, page; `source_file` for local PDFs).
@@ -114,6 +114,7 @@ All commands are `scholarly-access-agent <command>`; `<command> -h` lists option
 | | `report trace` | Trace citation keys and numbers back to records |
 | | `render-report` | Markdown report → standalone HTML (`--format pdf` adds an A4 PDF) |
 | Lineage | `lineage init` | Create the topic folder (`--no-lineage` for a plain review) |
+| | `lineage expand` | One-hop snowballing for a plain review: references and citing papers of a few seeds, ranked by seed links, screened papers hidden |
 | | `lineage seed`, `collect`, `analyze` | Seed candidates, citation neighbourhood, RPYS / clusters / SPC main path |
 | | `lineage keywords`, `query-test`, `gold`, `log-search`, `mentions`, `adoption` | Build and test search vocabulary, freeze a gold set, log outside searches, count mentions and forward-only adoption |
 | | `lineage links`, `check`, `page`, `report-section` | Journal-first links, validation and layout warnings, interactive page (`--embed`), report chapter |

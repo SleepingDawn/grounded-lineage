@@ -11,6 +11,7 @@ from typing import Sequence
 COMMANDS = {
     "init": ("workspace", "Create <research root>/<Topic>/ with evidence/, figs/, data/, lineage.json."),
     "seed": ("seed", "Find OpenAlex candidates for a seed paper (title words, DOI, arXiv:ID)."),
+    "expand": ("expand", "One-hop snowballing for a plain review: rank references/citing papers of seeds."),
     "collect": ("collect", "Collect seed + references + citing papers; optional widening."),
     "analyze": ("analyze", "RPYS, clusters and SPC main path on a collected corpus."),
     "keywords": ("keywords", "Rank OpenAlex keyword tags by field fit for widening."),

@@ -19,6 +19,7 @@ State the budget at the start (which preset, with its numbers) and report what w
 | Tier | Purpose | Tool | Default (trend review) | Deep | Context cost |
 | --- | --- | --- | --- | --- | --- |
 | 1 Screen | relevance from metadata | native search, publisher/arXiv abstract pages | 50–100 candidates | 150–250 candidates | ~100–300 tokens each |
+| 1b Expand | papers the search missed | `lineage expand` on central seeds | 3–5 seeds, top 40 | 5–8 seeds, top 80 | ~100–300 tokens each |
 | 2 Text | locate and read evidence | `read_url` outline → `terms` → `sections` | 15–30 papers | 40–60 papers | ~1–4k tokens each |
 | 3 PDF | paywalled, page citation, broken HTML | `download_pdf` → `read_pdf` | ≤ 10 papers | ≤ 30 papers | ~2–6k tokens each |
 | 4 Figures | figure decides the claim | `image_url` / page image | ≤ 5 figures | ≤ 15 figures | ~1–2k tokens each |
@@ -27,6 +28,12 @@ State the budget at the start (which preset, with its numbers) and report what w
 - Tier 2–3 reading always goes to sub-agents (below), whatever the count.
 - Before recording a paper as `초록만 확인` or `미확인` after `blocked`, `login_required`, `no_pdf_found` or `unsupported_domain`, try every open-copy route in publisher-routes.md (PMC/Europe PMC, HAL, repository, arXiv/preprint).
 - Stop on three, not two, successive query refinements without new relevant evidence (Searching and stopping).
+
+**Citation expansion (Tier 1b).** Ranked web search misses central papers that use other wording and favours what is visible on the web. In every review except a quick search, once Tier 1 has a first shortlist, pick 3–5 seeds (Deep: 5–8): the most central peer-reviewed papers or reviews for the question, not simply the most cited. Run
+
+`scholarly-access-agent lineage expand <seed DOIs> --known <topic>/evidence --since <first year in scope> --out <topic>/data/expansion.json` (add `--known` for any other file listing screened DOIs, `--top 80` under Deep)
+
+It takes one hop: each seed's references and up to 40 of its citing papers (half most-cited, half newest), ranked by `score` = `links` (how many seeds a paper connects to) plus a small citations-per-year bonus; already screened papers (DOI, arXiv ID, OpenAlex ID or title) are hidden. Screen the new rows like other Tier 1 candidates: `links` ≥ 2 marks a paper several seeds depend on or build on; a high `cites_per_year` among citing papers marks recent follow-up work. Log the run as a query (source `OpenAlex expand`, seeds, date), and in the report say how many shortlisted papers came only from expansion. Skip it for a quick factual search; if OpenAlex is unavailable (exit code 3 = daily quota), say so and continue. Questions about origins and branches use `research-lineage`, which collects a much larger citation corpus.
 
 Deep reads more of what is accessible; it never widens access. Bot checks, `login_required` and publisher AI-use restrictions (access-and-auth.md) apply unchanged.
 
