@@ -14,7 +14,7 @@ python3 -m venv .venv
 .venv/bin/scholarly-access-agent doctor
 ```
 
-Connect MCP using `examples/claude-mcp.json` or `examples/codex-mcp.toml`, replacing the executable path. Claude Code: `claude mcp add --scope user snu-library -- /absolute/repo/.venv/bin/scholarly-access-agent mcp-server`. For Claude account Skills upload `dist/snu-library-scholarly-access.zip` and `dist/research-lineage.zip`. Restart clients after changing tools. A cloud-only session needs a local MCP connection to use local access.
+Connect MCP using `examples/claude-mcp.json` or `examples/codex-mcp.toml`, replacing the executable path. Claude Code: `claude mcp add --scope user snu-library -- /absolute/repo/.venv/bin/scholarly-access-agent mcp-server`. Codex: copy the `examples/codex-mcp.toml` block into `~/.codex/config.toml` (`setup` installs skills only, not the MCP entry); keep `default_tools_approval_mode = "approve"`, because Codex otherwise asks approval for every MCP call and fails them in `codex exec` and automations, and `tool_timeout_sec = 300`, because the 60 s default can cut off `download_pdf`. `add_domain` stays on prompt. For Claude account Skills upload `dist/snu-library-scholarly-access.zip` and `dist/research-lineage.zip`. Restart clients after changing tools. A cloud-only session needs a local MCP connection to use local access.
 
 ## Authentication and research
 

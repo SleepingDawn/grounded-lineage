@@ -1,3 +1,13 @@
 [mcp_servers.snu-library]
 command = "/ABSOLUTE/REPO/.venv/bin/scholarly-access-agent"
 args = ["mcp-server"]
+startup_timeout_sec = 30
+# One download_pdf can take several 30 s navigations; Codex's default tool timeout is 60 s.
+tool_timeout_sec = 300
+# Codex asks approval for every MCP tool call and fails them when no one can approve
+# (codex exec, automations). Approve the reading and download tools by default.
+default_tools_approval_mode = "approve"
+
+# add_domain changes the proxy domain list: keep asking.
+[mcp_servers.snu-library.tools.add_domain]
+approval_mode = "prompt"
