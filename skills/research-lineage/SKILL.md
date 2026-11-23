@@ -66,6 +66,10 @@ The report's method section names both search routes: the native searches logged
 - Clusters: the printed words are the ones over-represented in each cluster against the field; label each by what its members do (`evidence.cluster_labels`).
 - Seeds that predate the topic (method papers when the topic is method × new tool) make a corpus about the parent field: check how many citing papers match the topic (`lineage mentions data "<regex>"`). When few do, add a recent seed from the intersection or widen with tested queries before reading the analysis as the topic's flow.
 
+### Old and new work: the tool collects both, you record the question's era
+
+Never narrow what is collected by era: what is not collected cannot be noticed later. `collect --query` adds the newest works on top of the most relevant ones (`--recent`, default half of `--per-keyword`), so a classical topic keeps its full relevance list; `analyze` folds preprint/journal copies of one paper together. What you decide is only which era the *question* is about: set `meta.era_focus` (`both` by default, `origin` for "where did it begin", `current` for "where does it stand now") and say why in `meta.era_note`. `lineage check` prints the era balance either way and warns when the tree lacks the field's recent work (`era_recent_thin`) or its most-cited ancestors (`era_founders_thin`); the focus only switches off the warning for the era the question is not about. `query-test` says when a quarter of the in-field results lie outside the years the gold covers: recall says nothing about them, so add key papers of those years to the gold.
+
 ## Vocabulary and widening (step 5)
 
 The seed's neighbourhood uses the seed camp's words; missing branches live under other names (older terms, other fields, abbreviations). Build the vocabulary from the reviews read in step 4 as well as from tags, test it, then widen. Full procedure: `references/search-vocabulary.md`. In short:

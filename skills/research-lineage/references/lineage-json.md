@@ -19,6 +19,8 @@ Text fields accept `**bold**`; everything else is escaped. Full examples: `examp
     "expanded_dir": "data_x",                 // omit if not widened
     "focus_regex": "long-range|electrostat",  // marks on-topic titles in the expansion list
     "expansion_note": "why widening was skipped",  // shown when expanded_dir is omitted
+    "era_focus": "both",                      // optional: both (default) | origin | current — the era the question asks about
+    "era_note": "asks where the method began", // optional: why; shown in the check's era line
     "figure_source": "OpenAlex 인용 코퍼스 + 원문 21편"  // optional: source named in the figure footer
   },
   "lanes": [                                  // index = lane number
@@ -163,8 +165,10 @@ Then, offline from the local corpus (`data_dir` and `expanded_dir`: `corpus.json
 | `contested_without_x_edge` | a contested claim with no `x` edge between its two sides |
 | `unsaturated_search` | `data/queries.json` exists and no logged query reached novelty < 10% |
 | `not_found_without_search_log` | verdict, trends or limits say something was not found (찾지 못, not found, …) but `data/searches.json` is missing |
+| `era_recent_thin` | ≥ 10 field papers and ≥ 15% of the field are from the last three years, but fewer than 2 study boxes are (off when `meta.era_focus` is `origin`) |
+| `era_founders_thin` | fewer than 2 of the 10 most-cited ancestors in `analysis.json` are boxes (off when `meta.era_focus` is `current`; generic tools may stay out) |
 
-A summary line follows: `s edges: n with citation link, m without, k unverifiable (no OpenAlex/refs)`.
+Summary lines follow: `s edges: n with citation link, m without, k unverifiable (no OpenAlex/refs)`, and `era: x% of n field papers from <years>, k/m boxes; j/10 most-cited ancestors are boxes; focus <focus>`. An invalid `meta.era_focus` is a problem.
 
 The report chapter adds a **검색 방법과 범위** section only when there is something to say: an unsaturated query log, searches logged with `lineage log-search`, or `adoption`/`mentions` runs (listed by id so verdict text can cite `adoption#n`).
 

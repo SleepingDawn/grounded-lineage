@@ -50,6 +50,50 @@ def label(w):
     return f"{first} {w.get('publication_year') or 'n.d.'}"
 
 
+def norm_title(t: str) -> str:
+    return " ".join(re.findall(r"\w+", (t or "").lower()))
+
+
+def version_rank(w) -> tuple:
+    """Journal/conference record first, then the more cited, then the lower ID (stable)."""
+    stype = ((w.get("primary_location") or {}).get("source") or {}).get("type") or ""
+    return (stype not in ("journal", "conference", "book series"), -(w.get("cited_by_count") or 0), w.get("id", ""))
+
+
+def version_aliases(corpus: dict) -> dict:
+    """{duplicate ID: kept ID} for records that are versions of one paper (preprint, repository and journal
+    copies are separate OpenAlex works): same normalised title (>= 25 characters), years at most 2 apart."""
+    groups: dict = {}
+    for k, w in corpus.items():
+        t = norm_title(w.get("title"))
+        if len(t) >= 25:
+            groups.setdefault(t, []).append(k)
+    alias = {}
+    for ks in groups.values():
+        if len(ks) < 2:
+            continue
+        ks = sorted(ks, key=lambda k: version_rank(corpus[k]))
+        keep, ky = ks[0], corpus[ks[0]].get("publication_year")
+        for k in ks[1:]:
+            y = corpus[k].get("publication_year")
+            if not (ky and y) or abs(ky - y) <= 2:
+                alias[k] = keep
+    return alias
+
+
+def merge_versions(corpus: dict, alias: dict) -> dict:
+    """Corpus with duplicates folded into the kept record (roles and references united, IDs remapped)."""
+    out = {k: dict(w) for k, w in corpus.items() if k not in alias}
+    for dup, keep in alias.items():
+        w = out[keep]
+        w["_role"] = sorted(set(w.get("_role", [])) | set(corpus[dup].get("_role", [])))
+        w["referenced_works"] = list(w.get("referenced_works") or []) + list(corpus[dup].get("referenced_works") or [])
+    for k, w in out.items():
+        refs = dict.fromkeys(alias.get(short(r), short(r)) for r in w.get("referenced_works") or [])
+        w["referenced_works"] = [r for r in refs if r != k]
+    return out
+
+
 def auto_min_ref(field_refs: Counter, budget: int = REF_BUDGET) -> int:
     for m in range(1, 6):
         if sum(1 for n in field_refs.values() if n >= m) <= budget:
@@ -147,6 +191,10 @@ def main(argv=None):
     pos = [a for a in argv if not a.startswith("--")]
     d = Path(pos[0])
     corpus = json.loads((d / "corpus.json").read_text(encoding="utf-8"))
+    # a preprint and its journal version would count twice (inflating recent years) and split citations
+    alias = version_aliases(corpus)
+    if alias:
+        corpus = merge_versions(corpus, alias)
     seeds = [k for k, w in corpus.items() if "seed" in w["_role"]]
     # field = citing papers plus anything added by keyword / ancestor expansion
     fwd = [k for k, w in corpus.items()
@@ -245,7 +293,7 @@ def main(argv=None):
         })
 
     # ---- 5. main path (SPC) ---------------------------------------------
-    main_path, top_edges = spc_main_path(in_field, allw)
+    main_path, top_edges = spc_main_path(in_field, allw, alias)
 
     def desc(k):
         w = allw.get(k) or {}
@@ -254,6 +302,7 @@ def main(argv=None):
     res = {
         "min_ref": min_ref, "min_ref_auto": min_ref_auto,
         "n_field": len(seeds) + len(fwd), "n_field_refs": len(field_refs),
+        "merged_versions": sorted([dup, keep] for dup, keep in alias.items()),
         "rpys_peaks": [(y, n, dev, [desc(r) for _, r in top_in_year(y)]) for y, n, dev in peaks],
         "rpys_scope": f"references outside the field (seeds and forward papers excluded), cited >= {min_ref} "
                       f"times; peaks up to {rpys_until}",
@@ -280,13 +329,14 @@ MAIN_PATH_METHOD = ("key-route within the field (seeds + forward papers): highes
                     "both ways; earlier history is in RPYS and core ancestors")
 
 
-def spc_main_path(nodes: set, allw: dict):
+def spc_main_path(nodes: set, allw: dict, alias: dict | None = None):
     """(key-route main path, top-15 SPC edges) on the citation DAG among `nodes`."""
+    alias = alias or {}
     D = nx.DiGraph()  # edge: cited -> citing (knowledge flow)
     D.add_nodes_from(nodes)
     for k in nodes:
         for r in (allw.get(k) or {}).get("referenced_works", []) or []:
-            r = short(r)
+            r = alias.get(short(r), short(r))
             if r in nodes and r != k:
                 D.add_edge(r, k)
     # citation cycles (preprint/version artefacts): drop edges that go backward in time,
@@ -319,6 +369,9 @@ def summary_text(res):
            f"clusters: {len(cl)} (" + "; ".join(f"C{c['cluster']} {c['size']}: {', '.join(c['words'][:3])}"
                                                 for c in cl[:6]) + ")",
            f"main path: {len(res['main_path'])} works (key-route)"]
+    if res.get("merged_versions"):
+        out.append(f"merged {len(res['merged_versions'])} duplicate version(s) of the same paper "
+                   "(preprint/repository copy folded into the journal record)")
     miss = res.get("missing_year") or {}
     if miss.get("corpus") or miss.get("field_refs"):
         out.append(f"skipped without publication year: {len(miss.get('corpus') or [])} corpus record(s), "

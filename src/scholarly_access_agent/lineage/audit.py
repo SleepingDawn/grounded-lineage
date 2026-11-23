@@ -7,6 +7,9 @@
   contested_without_x_edge    a contested pair with no x (disputes) edge between its sides
   unsaturated_search          queries.json exists and no logged query reached novelty < 10%
   not_found_without_search_log  verdict/trends/limits claim "not found" but no searches.json records the searches
+  era_recent_thin             many field papers from the last three years, (almost) none in the tree
+  era_founders_thin           (almost) none of the 10 most-cited ancestors in the tree
+                              (meta.era_focus 'origin' / 'current' turns off the warning for the other era)
 
 All are warnings: an old lineage.json stays valid.
 """
@@ -146,6 +149,66 @@ def not_found(L, data: Path) -> list[str]:
     return []
 
 
+ERA_FOCUS = ("both", "origin", "current")
+RECENT_YEARS = 3  # "recent" = the current year and the two before it
+
+
+def era_balance(L, work: Path, today: int | None = None) -> tuple[list[str], list[str]]:
+    """Does the tree cover both the field's recent work and its founding works?
+
+    The tool measures; the agent only records the question's focus (meta.era_focus: both | origin | current, with
+    meta.era_note saying why). The focus turns off the warning for the era the question is not about; it never
+    narrows what was collected."""
+    from datetime import date
+
+    from .analyze import merge_versions, version_aliases
+
+    meta = L.get("meta") or {}
+    focus = meta.get("era_focus") or "both"
+    today = today or date.today().year
+    corpus: dict = {}
+    for d in corpus_dirs(L, work):
+        p = d / "corpus.json"
+        if p.exists():
+            corpus.update(json.loads(p.read_text(encoding="utf-8")))
+    if not corpus:
+        return [], []
+    corpus = merge_versions(corpus, version_aliases(corpus))
+    field = [w for w in corpus.values() if any(r == "forward" or r.startswith("keyword:") or r == "ancestor-forward"
+                                                for r in w.get("_role", []))]
+    years = [w.get("publication_year") for w in field if w.get("publication_year")]
+    lo = today - RECENT_YEARS + 1
+    n_recent = sum(1 for y in years if y >= lo)
+    studies = [n for n in L.get("nodes", []) if n.get("kind") != "event"]
+    tree_recent = sum(1 for n in studies if (n.get("year") or 0) >= lo)
+    warns = []
+    share = n_recent / len(years) if years else 0
+    if focus != "origin" and n_recent >= 10 and share >= 0.15 and tree_recent < 2:
+        warns.append(f"era_recent_thin: {n_recent} field papers ({share:.0%}) are from {lo}-{today} but the tree "
+                     f"has {tree_recent} box(es) from those years; add the current work, or set meta.era_focus "
+                     "'origin' with meta.era_note if the question is only about where it began")
+    # founding works: the most-cited ancestors from `lineage analyze` (seeds already left out)
+    core, k_in = [], None
+    for d in reversed(corpus_dirs(L, work)):  # expanded corpus first
+        p = d / "analysis.json"
+        if p.exists():
+            core = [s for _, s in json.loads(p.read_text(encoding="utf-8")).get("core_ancestors", [])[:10]]
+            break
+    if core:
+        ids = {n.get("openalex") for n in studies if n.get("openalex")}
+        missing = [s for s in core if s.rsplit("| ", 1)[-1] not in ids]
+        k_in = len(core) - len(missing)
+        if focus != "current" and k_in < 2:
+            names = "; ".join(" | ".join(s.split(" | ")[::2])[:70] for s in missing[:3])
+            warns.append(f"era_founders_thin: {k_in} of the field's 10 most-cited ancestors are boxes (missing e.g. "
+                         f"{names}); add the founding works (generic tools such as DFT functionals or codes can stay "
+                         "out), or set meta.era_focus 'current' with meta.era_note if the question is only about now")
+    line = (f"era: {share:.0%} of {len(years)} field papers from {lo}-{today}, {tree_recent}/{len(studies)} boxes; "
+            + (f"{k_in}/10 most-cited ancestors are boxes; " if k_in is not None else "")
+            + f"focus {focus}" + (f" ({meta['era_note']})" if meta.get("era_note") else ""))
+    return warns, [line]
+
+
 def audit(L, work: Path) -> tuple[list[str], list[str]]:
     """(warnings, summary lines) of every corpus-backed check."""
     work = Path(work)
@@ -162,4 +225,7 @@ def audit(L, work: Path) -> tuple[list[str], list[str]]:
         warns.append(f"unsaturated_search: {unsaturated_line(state)} across {state['n']} logged queries; "
                      "say so in the method section or run more query variants")
     warns += not_found(L, data)
+    w, line = era_balance(L, work)
+    warns += w
+    summary += line
     return warns, summary

@@ -628,5 +628,93 @@ class WorkspaceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 workspace.init("../escape")
 
+
+class EraBalanceTests(unittest.TestCase):
+    """Recent work gets in without pushing out the classics; the check warns about either era going missing."""
+
+    def test_preprint_and_journal_versions_are_merged(self):
+        title = "Machine-learned barriers for off-lattice kinetic Monte Carlo"
+        corpus = {
+            "J": dict(work("J", 2025, ["A"], title, 9, ["forward"]),
+                      primary_location={"source": {"type": "journal"}}),
+            "P": dict(work("P", 2024, ["B"], title + ".", 2, ["keyword:q"]),
+                      primary_location={"source": {"type": "repository"}}),
+            "C": work("C", 2026, ["P"], "A paper citing the preprint copy", 0, ["forward"]),
+        }
+        alias = analyze.version_aliases(corpus)
+        self.assertEqual(alias, {"P": "J"})
+        merged = analyze.merge_versions(corpus, alias)
+        self.assertNotIn("P", merged)
+        self.assertEqual(merged["J"]["_role"], ["forward", "keyword:q"])
+        self.assertEqual(set(merged["J"]["referenced_works"]), {"A", "B"})
+        self.assertEqual(merged["C"]["referenced_works"], ["J"])  # citations of the copy now point at the kept record
+        far = dict(corpus, P=dict(corpus["P"], publication_year=2015))
+        self.assertEqual(analyze.version_aliases(far), {})  # same title ten years apart: different papers
+
+    def _topic(self, d: Path, recent_boxes: int, founder_boxes: int, focus=None):
+        corpus = {f"F{i}": work(f"F{i}", 2026 if i < 12 else 2010, [], f"Field paper number {i}", 1, ["forward"])
+                  for i in range(40)}
+        (d / "data").mkdir()
+        (d / "data" / "corpus.json").write_text(json.dumps(corpus), encoding="utf-8")
+        core = [[50 - i, f"Founder{i} 1990 | 999 cit | Founding work {i} | A{i}"] for i in range(10)]
+        (d / "data" / "analysis.json").write_text(json.dumps({"core_ancestors": core}), encoding="utf-8")
+        L = json.loads(json.dumps(LINEAGE))
+        L["nodes"] = [{"id": f"r{i}", "lane": 1, "year": 2026, "title": "R", "sub": "R", "openalex": f"F{i}"}
+                      for i in range(recent_boxes)]
+        L["nodes"] += [{"id": f"a{i}", "lane": 0, "year": 1990, "title": "A", "sub": "A", "openalex": f"A{i}"}
+                       for i in range(founder_boxes)]
+        L["nodes"].append({"id": "m", "lane": 0, "year": 2010, "title": "M", "sub": "M", "openalex": "F20"})
+        L["edges"] = []
+        if focus:
+            L["meta"]["era_focus"] = focus
+        return L
+
+    def test_check_warns_when_either_era_is_missing_and_focus_turns_off_only_the_other(self):
+        from scholarly_access_agent.lineage import audit
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            L = self._topic(d, recent_boxes=0, founder_boxes=0)
+            warns, line = audit.era_balance(L, d, today=2026)
+            self.assertTrue(any(w.startswith("era_recent_thin") for w in warns))
+            self.assertTrue(any(w.startswith("era_founders_thin") for w in warns))
+            self.assertIn("30% of 40 field papers from 2024-2026", line[0])
+            L["meta"]["era_focus"] = "origin"   # question about origins: recent warning off, founders still checked
+            warns, _ = audit.era_balance(L, d, today=2026)
+            self.assertEqual([w.split(":")[0] for w in warns], ["era_founders_thin"])
+            L["meta"]["era_focus"] = "current"
+            warns, _ = audit.era_balance(L, d, today=2026)
+            self.assertEqual([w.split(":")[0] for w in warns], ["era_recent_thin"])
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            warns, line = audit.era_balance(self._topic(d, recent_boxes=3, founder_boxes=2), d, today=2026)
+            self.assertEqual(warns, [])
+            self.assertIn("2/10 most-cited ancestors are boxes", line[0])
+        bad = json.loads(json.dumps(LINEAGE))
+        bad["meta"]["era_focus"] = "recent"
+        self.assertTrue(any("era_focus" in e for e in page.validate(bad)))
+
+    def test_gold_era_note_both_ways(self):
+        self.assertIn("newer than the newest gold paper (2017)",
+                      query_test.era_note([2001, 2008, 2017], [2024, 2025, 2026, 2010, 2012]))
+        self.assertIn("older than the oldest gold paper (2020)",
+                      query_test.era_note([2020, 2022, 2025], [1990, 1995, 2001, 2021, 2023]))
+        self.assertEqual(query_test.era_note([2001, 2010, 2020], [2005, 2012, 2015, 2018, 2019]), "")
+
+    def test_query_widening_adds_newest_on_top_of_relevance(self):
+        from scholarly_access_agent.lineage import collect
+        rel = {"results": [{"id": f"https://openalex.org/R{i}"} for i in range(4)], "meta": {"count": 99}}
+        newest = {"results": [{"id": "https://openalex.org/R0"}] + [{"id": f"https://openalex.org/N{i}"} for i in range(5)]}
+        with mock.patch.object(collect, "search", return_value=rel), \
+                mock.patch.object(collect, "get", return_value=newest) as g:
+            works, n = collect.search_query('"a b" AND c', 4, 2)
+        self.assertEqual(sorted(works), ["N0", "N1", "R0", "R1", "R2", "R3"])  # all 4 relevant kept, 2 newest added
+        self.assertEqual(n, 2)
+        self.assertEqual(g.call_args[0][0]["sort"], "publication_date:desc")
+        with mock.patch.object(collect, "search", return_value=rel), \
+                mock.patch.object(collect, "get", side_effect=AssertionError("no newest call")):
+            works, n = collect.search_query('"a b" AND c', 4, 0)
+        self.assertEqual((len(works), n), (4, 0))
+
+
 if __name__ == "__main__":
     unittest.main()

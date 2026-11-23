@@ -75,27 +75,46 @@ GOLD_LINE = {"independent": "gold: independent ({n})", "lineage": "gold: from cu
 
 
 def recall(q, gold):
+    """(found IDs, [(missed ID, work)], {gold ID: year}) for one query."""
     found = set()
     for k in range(0, len(gold), 50):
         chunk = gold[k:k + 50]
         r = get({"filter": f"title_and_abstract.search:{q},openalex_id:{'|'.join(chunk)}",
                  "per-page": 50, "select": "id"})
         found |= {short(w["id"]) for w in r["results"]}
-    missed = [g for g in gold if g not in found]
     info = {}
-    for k in range(0, len(missed), 50):
-        r = get({"filter": "openalex_id:" + "|".join(missed[k:k + 50]), "per-page": 50,
+    for k in range(0, len(gold), 50):  # all gold, not only the missed: their years tell which era the gold covers
+        r = get({"filter": "openalex_id:" + "|".join(gold[k:k + 50]), "per-page": 50,
                  "select": "id,title,publication_year,abstract_inverted_index"})
         for w in r["results"]:
             info[short(w["id"])] = w
-    return found, [(g, info.get(g, {})) for g in missed]
+    years = {g: info[g].get("publication_year") for g in gold if g in info}
+    return found, [(g, info.get(g, {})) for g in gold if g not in found], years
+
+
+def era_note(gold_years, result_years) -> str:
+    """Warn when a quarter or more of the in-field results lie outside the years the gold covers."""
+    gy, ry = [y for y in gold_years if y], [y for y in result_years if y]
+    if len(gy) < 3 or len(ry) < 5:
+        return ""
+    lo, hi = min(gy), max(gy)
+    parts = []
+    newer, older = sum(y > hi for y in ry), sum(y < lo for y in ry)
+    if newer / len(ry) >= 0.25:
+        parts.append(f"{newer}/{len(ry)} in-field results are newer than the newest gold paper ({hi})")
+    if older / len(ry) >= 0.25:
+        parts.append(f"{older}/{len(ry)} are older than the oldest gold paper ({lo})")
+    if not parts:
+        return ""
+    return (f"gold era: the gold covers {lo}-{hi}; " + " and ".join(parts) + "; recall says nothing about them. "
+            "Add key papers from those years to the gold (`lineage gold freeze`), or judge them separately")
 
 
 def fetch(query, top_n, gold):
     """Network part of one query test (search + recall); safe to run in parallel threads."""
     r = search(query, top_n)
-    found, missed = recall(query, gold) if gold else (set(), [])
-    return r, found, missed
+    found, missed, years = recall(query, gold) if gold else (set(), [], {})
+    return r, found, missed, years
 
 
 def main(argv=None):
@@ -150,7 +169,7 @@ def main(argv=None):
               "is SATURATED, so the search has not converged: vary the vocabulary or report it as unsaturated")
 
 
-def report_one(d, a, query, label, gold, r, found, missed):
+def report_one(d, a, query, label, gold, r, found, missed, gold_years=None):
     known = set()
     for name in ("corpus.json", "refs_meta.json"):
         p = d / name
@@ -177,6 +196,9 @@ def report_one(d, a, query, label, gold, r, found, missed):
         for g, w in missed:
             flag = "no abstract in OpenAlex" if w and not w.get("abstract_inverted_index") else "has abstract: query misses its wording"
             print(f"   missed {g} {w.get('publication_year', '')} {(w.get('title') or '')[:70]}  [{flag}]")
+    era = era_note(list((gold_years or {}).values()), [w.get("publication_year") for w in on]) if gold else ""
+    if era:
+        print(era)
     print(f"novelty  : {len(new_on)}/{len(on)} in-field results not yet in corpus or its references ({novelty:.0%})"
           + ("  -> SATURATED" if on and novelty < 0.10 else ""))
     for w in sorted(new_on, key=lambda w: -(w.get("cited_by_count") or 0))[:a.list]:
@@ -197,6 +219,7 @@ def report_one(d, a, query, label, gold, r, found, missed):
                 "hits": total, "top": len(top), "on_topic": len(on), "precision": round(precision, 3),
                 "gold": len(gold), "gold_source": getattr(a, "gold_source", "") if gold else "",
                 "gold_found": len(found), "gold_found_ids": sorted(found),
+                "gold_era": era,
                 "new_on_topic": len(new_on),
                 "novelty": round(novelty, 3), "saturated": bool(on) and novelty < 0.10,
                 "new_examples": [{"id": short(w["id"]), "year": w.get("publication_year"),

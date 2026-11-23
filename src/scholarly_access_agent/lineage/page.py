@@ -164,6 +164,9 @@ def validate(L):
             if w > outer:  # past the box outline; text inside the padding is only a warning (see warnings())
                 errs.append(f"node {n.get('id')}: {k} '{n.get(k)}' is ~{w:.0f}px wide, box fits {limit}px; shorten it "
                             f"({width_budget('event' if ev else k)})")
+    focus = (L.get("meta") or {}).get("era_focus")
+    if focus is not None and focus not in ("both", "origin", "current"):
+        errs.append(f"meta.era_focus '{focus}' must be 'both' (default), 'origin' or 'current'")
     if len(L["nodes"]) > 50:
         errs.append(f"{len(L['nodes'])} nodes; keep the tree at 20-40 (hard limit 50)")
     by_id = {n.get("id"): n for n in L["nodes"]}

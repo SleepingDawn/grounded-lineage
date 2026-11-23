@@ -3,7 +3,9 @@
 Base corpus = seeds + backward refs (level 1) + forward citing papers (level 1).
 Optional widening (depth), each capped:
   --query 'Q'            add the most relevant works for a boolean query (concept blocks,
-                         tested first with `lineage query-test`); repeatable, capped by --per-keyword
+                         tested first with `lineage query-test`); repeatable, capped by --per-keyword,
+                         plus --recent newest works on top (default half of --per-keyword), so recent
+                         work gets in without pushing out the classical, most relevant results
   --keywords "kw1;kw2"   add works whose title/abstract match each keyword (inside --context):
                          half most-cited, half newest, so recent low-citation work is kept
   --ancestors N          take the N references most cited by the field (optionally only
@@ -25,7 +27,7 @@ import shutil
 from collections import Counter
 from pathlib import Path
 
-from .openalex import FIELDS, SPLIT_HINT, check_query, fetch_citing, fetch_many, search, short, top_mixed
+from .openalex import FIELDS, SPLIT_HINT, check_query, fetch_citing, fetch_many, get, search, short, top_mixed
 
 
 def search_keyword(kw: str, context: str, limit: int) -> dict:
@@ -33,9 +35,25 @@ def search_keyword(kw: str, context: str, limit: int) -> dict:
     return top_mixed({"filter": flt, "select": FIELDS}, limit)[0]
 
 
-def search_query(q: str, limit: int) -> dict:
+def search_query(q: str, limit: int, recent: int = 0) -> tuple[dict, int]:
+    """The `limit` most relevant works, plus up to `recent` newest works that are not among them.
+
+    Relevance ranking favours older, well-cited work: in a 2026 test, works from the last three years sat at
+    ranks 14-98. The newest works are added on top, never in place of relevant ones, so a classical topic
+    keeps its full relevance list. Returns (works, number of newest works added)."""
     d = search(q, limit)
-    return {short(w["id"]): w for w in d["results"][:limit]}
+    out = {short(w["id"]): w for w in d["results"][:limit]}
+    n_new = 0
+    if recent > 0:
+        newest = get({"filter": f"title_and_abstract.search:{check_query(q)}", "select": FIELDS,
+                      "per-page": min(200, recent + limit), "sort": "publication_date:desc"}).get("results", [])
+        for w in newest:
+            if n_new >= recent:
+                break
+            if short(w["id"]) not in out:
+                out[short(w["id"])] = w
+                n_new += 1
+    return out, n_new
 
 
 def add(corpus: dict, role: dict, works: dict, tag: str) -> int:
@@ -58,6 +76,9 @@ def main(argv=None) -> int:
     ap.add_argument("--query", action="append", default=[],
                     help="boolean query tested with `lineage query-test`; repeat for several")
     ap.add_argument("--per-keyword", type=int, default=40)
+    ap.add_argument("--recent", type=int, default=None,
+                    help="per --query: newest works added on top of the --per-keyword most relevant "
+                         "(default half of --per-keyword; 0 = relevance only)")
     ap.add_argument("--ancestors", type=int, default=0)
     ap.add_argument("--per-ancestor", type=int, default=40)
     ap.add_argument("--focus", default="")
@@ -102,9 +123,11 @@ def main(argv=None) -> int:
         n = add(corpus, role, search_keyword(kw, a.context, a.per_keyword), f"keyword:{kw}")
         print(f"keyword '{kw}': +{n} new")
 
+    recent = a.per_keyword // 2 if a.recent is None else a.recent
     for q in a.query:
-        n = add(corpus, role, search_query(q, a.per_keyword), f"keyword:{q}")
-        print(f"query '{q[:70]}': +{n} new")
+        works, n_recent = search_query(q, a.per_keyword, recent)
+        n = add(corpus, role, works, f"keyword:{q}")
+        print(f"query '{q[:70]}': +{n} new ({a.per_keyword} most relevant + {n_recent} newest)")
 
     if a.ancestors:
         field = [k for k, r in role.items() if r & {"seed", "forward"}]
