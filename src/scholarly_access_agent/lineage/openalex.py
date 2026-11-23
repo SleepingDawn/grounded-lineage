@@ -109,12 +109,39 @@ def fetch_many(ids, fields: str = FIELDS, on_chunk=None) -> dict:
     return out
 
 
+RECENT_SHARE = 0.5  # share of a capped list taken newest-first
+
+
+def top_mixed(params: dict, limit: int) -> tuple[dict, int]:
+    """Up to `limit` works for `params`: half most-cited, half newest; and the total hit count.
+
+    A cap ranked by citations alone drops recent work, which has had no time to be cited.
+    Newest works that are already in the cited half free their slots for the next most-cited.
+    """
+    if limit <= 0:
+        return {}, 0
+    n_recent = int(limit * RECENT_SHARE)
+    n_cited = limit - n_recent
+    per_page = min(200, limit)
+    d = get({**params, "per-page": per_page, "sort": "cited_by_count:desc"})
+    cited = d.get("results", [])
+    total = d.get("meta", {}).get("count", len(cited))
+    newest = get({**params, "per-page": per_page, "sort": "publication_date:desc"}).get("results", []) if n_recent else []
+    out: dict = {}
+    for w in cited[:n_cited]:
+        out[short(w["id"])] = w
+    for w in newest + cited[n_cited:]:
+        if len(out) >= limit:
+            break
+        out.setdefault(short(w["id"]), w)
+    return out, total
+
+
 def fetch_citing(wid: str, limit: int | None = None) -> dict:
-    """All citing works, or only the `limit` most-cited ones."""
+    """All citing works, or `limit` of them: half most-cited, half newest."""
     params = {"filter": f"cites:{short(wid)}", "select": FIELDS}
     if limit:
-        d = get({**params, "per-page": min(200, limit), "sort": "cited_by_count:desc"})
-        return {short(w["id"]): w for w in d["results"][:limit]}
+        return top_mixed(params, limit)[0]
     out, cursor = {}, "*"
     while cursor:
         d = get({**params, "per-page": 200, "cursor": cursor})
@@ -140,4 +167,5 @@ def search(q: str, limit: int, select: str = FIELDS, prefer_relevance: bool = Tr
             return get({**base, "sort": "relevance_score:desc"}, tries=2)
         except OpenAlexError:
             pass
-    return get({**base, "sort": "cited_by_count:desc"})
+    works, total = top_mixed({k: v for k, v in base.items() if k != "per-page"}, limit)
+    return {"results": list(works.values()), "meta": {"count": total}}

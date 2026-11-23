@@ -17,6 +17,6 @@ The seed's citation neighbourhood uses the seed camp's words. The same concept o
    - A missed gold paper flagged "has abstract": add the wording it uses. Flagged "no abstract": no query can reach it; rely on citations.
    - Novelty under 10% is flagged SATURATED: variations of this query add little.
 5. **Stop** when strategy recall (union of all logged queries) covers ~80% of the gold set and the last query is saturated, or after ~6 queries.
-6. **Widen** with the queries whose precision passed: `scholarly-access-agent lineage collect data_x <SEED> --base data --query '<q1>' --query '<q2>' --per-keyword 60`, optionally `--ancestors 6 --focus '<regex>'`. Then `scholarly-access-agent lineage analyze data_x 2` and set `meta.expanded_dir`.
+6. **Widen** with the queries whose precision passed: `scholarly-access-agent lineage collect data_x <SEED> --base data --query '<q1>' --query '<q2>' --per-keyword 60`, optionally `--ancestors 6 --focus '<regex>'`. Capped lists (`--keywords`, `--per-ancestor`, relevance fallback) take half most-cited and half newest, so recent papers that do not cite the seed still enter; check the newest years in `analysis.txt` (forward by year). Then `scholarly-access-agent lineage analyze data_x 2` and set `meta.expanded_dir`.
 
 Field fit cannot judge pre-field precursors or very new preprints whose reference lists OpenAlex has not filled; judge those by reading.

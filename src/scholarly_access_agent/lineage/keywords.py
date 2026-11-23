@@ -4,7 +4,7 @@
    (references cited >= MIN_ANC times by the field).
 2. Rank tags by how many of those documents carry them; drop generic ones.
 3. For each candidate, count works whose title/abstract match `"tag" AND (CONTEXT)`
-   and how many of the 50 most-cited matches are NOT already in the corpus.
+   and how many of a 50-work sample (25 most-cited, 25 newest) are NOT already in the corpus.
    A high "new" share means the keyword reaches papers the seed's citations miss.
 
 Usage: lineage keywords DATA_DIR "CONTEXT" [TOP_N] [MIN_ANC] [FOCUS_REGEX]
@@ -17,7 +17,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from .openalex import get, short
+from .openalex import get, short, top_mixed
 from .query_test import text_of
 from .topic import core_set, in_field
 
@@ -83,10 +83,9 @@ def main(argv=None):
     core = core_set(d)
     for p, n in cands:
         flt = f'title_and_abstract.search:"{p}" AND ({context})'
-        r = get({"filter": flt, "per-page": 50, "sort": "cited_by_count:desc",
-                 "select": "id,title,publication_year,cited_by_count,abstract_inverted_index,referenced_works"})
-        total = r.get("meta", {}).get("count", 0)
-        top = r.get("results", [])
+        sample, total = top_mixed({"filter": flt, "select": "id,title,publication_year,cited_by_count,"
+                                   "abstract_inverted_index,referenced_works"}, 50)
+        top = list(sample.values())  # 25 most-cited + 25 newest: a new keyword shows up before it is cited
         # precision = citation-anchored: the hit cites a core paper of the field (wording-independent).
         # "new" counts only in-field works, so a keyword that drags in unrelated papers scores low.
         on = [w for w in top if in_field(w, core)]

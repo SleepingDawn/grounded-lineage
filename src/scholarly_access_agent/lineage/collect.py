@@ -4,11 +4,11 @@ Base corpus = seeds + backward refs (level 1) + forward citing papers (level 1).
 Optional widening (depth), each capped:
   --query 'Q'            add the most relevant works for a boolean query (concept blocks,
                          tested first with `lineage query-test`); repeatable, capped by --per-keyword
-  --keywords "kw1;kw2"   add the most-cited works whose title/abstract match each keyword
-                         (inside --context)
+  --keywords "kw1;kw2"   add works whose title/abstract match each keyword (inside --context):
+                         half most-cited, half newest, so recent low-citation work is kept
   --ancestors N          take the N references most cited by the field (optionally only
-                         those whose title matches --focus) and add their most-cited
-                         citing papers (--per-ancestor M), role "ancestor-forward"
+                         those whose title matches --focus) and add their citing papers
+                         (--per-ancestor M; half most-cited, half newest), role "ancestor-forward"
   --base DIR             start from an existing corpus.json (and refs_meta.json cache)
 
 Usage:
@@ -25,13 +25,12 @@ import shutil
 from collections import Counter
 from pathlib import Path
 
-from .openalex import FIELDS, fetch_citing, fetch_many, get, search, short
+from .openalex import FIELDS, fetch_citing, fetch_many, search, short, top_mixed
 
 
 def search_keyword(kw: str, context: str, limit: int) -> dict:
     flt = f'title_and_abstract.search:"{kw}"' + (f" AND ({context})" if context else "")
-    d = get({"filter": flt, "per-page": min(200, limit), "sort": "cited_by_count:desc", "select": FIELDS})
-    return {short(w["id"]): w for w in d["results"][:limit]}
+    return top_mixed({"filter": flt, "select": FIELDS}, limit)[0]
 
 
 def search_query(q: str, limit: int) -> dict:

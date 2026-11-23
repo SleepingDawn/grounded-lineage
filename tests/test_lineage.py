@@ -85,6 +85,62 @@ class OpenAlexClientTests(unittest.TestCase):
             openalex.check_query('"a" OR b, c')
 
 
+def fake_sorted_get(cited, newest, count=999):
+    """OpenAlex stand-in: answers by the requested sort order; records every request."""
+    calls = []
+
+    def fake(params, **kw):
+        calls.append(params)
+        ids = cited if params.get("sort") == "cited_by_count:desc" else newest
+        cites = 500 if params.get("sort") == "cited_by_count:desc" else 0
+        return {"results": [work(i, 2026, [], f"T {i}", cites=cites) for i in ids][:params.get("per-page", 25)],
+                "meta": {"count": count}}
+    return fake, calls
+
+
+class RecencyMixTests(unittest.TestCase):
+    """Capped lists must not be ranked by citations alone: new papers have had no time to be cited."""
+
+    def test_capped_list_keeps_newest_low_cited_works(self):
+        fake, calls = fake_sorted_get(["C1", "C2", "C3", "C4"], ["N1", "N2", "N3", "N4"])
+        with mock.patch.object(openalex, "get", side_effect=fake):
+            works, total = openalex.top_mixed({"filter": "cites:S"}, 4)
+        self.assertEqual(list(works), ["C1", "C2", "N1", "N2"])
+        self.assertEqual(total, 999)
+        self.assertEqual({c["sort"] for c in calls}, {"cited_by_count:desc", "publication_date:desc"})
+
+    def test_overlap_is_filled_from_the_cited_ranking(self):
+        fake, _ = fake_sorted_get(["C1", "C2", "C3", "C4"], ["C1", "C2", "N1"])
+        with mock.patch.object(openalex, "get", side_effect=fake):
+            works, _ = openalex.top_mixed({"filter": "x"}, 4)
+        self.assertEqual(sorted(works), ["C1", "C2", "C3", "N1"])
+
+    def test_fetch_citing_with_limit_includes_newest(self):
+        fake, calls = fake_sorted_get(["C1", "C2"], ["N1", "N2"])
+        with mock.patch.object(openalex, "get", side_effect=fake):
+            works = openalex.fetch_citing("W9", 2)
+        self.assertEqual(sorted(works), ["C1", "N1"])
+        self.assertTrue(all(c["filter"] == "cites:W9" for c in calls))
+
+    def test_collect_keyword_widening_includes_newest(self):
+        from scholarly_access_agent.lineage import collect
+        fake, _ = fake_sorted_get(["C1", "C2"], ["N1", "N2"])
+        with mock.patch.object(openalex, "get", side_effect=fake):
+            works = collect.search_keyword("latent charge", "", 2)
+        self.assertEqual(sorted(works), ["C1", "N1"])
+
+    def test_search_fallback_is_mixed_and_keeps_the_count(self):
+        def fake(params, **kw):
+            if params.get("sort") == "relevance_score:desc":
+                raise openalex.OpenAlexError("relevance sort unavailable")
+            return fake_mixed(params)
+        fake_mixed, _ = fake_sorted_get(["C1", "C2"], ["N1", "N2"], count=42)
+        with mock.patch.object(openalex, "get", side_effect=fake):
+            d = openalex.search("a AND b", 2)
+        self.assertEqual(sorted(w["id"].rsplit("/", 1)[-1] for w in d["results"]), ["C1", "N1"])
+        self.assertEqual(d["meta"]["count"], 42)
+
+
 class AnalysisTests(unittest.TestCase):
     def test_analyze_runs_offline_on_cached_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
