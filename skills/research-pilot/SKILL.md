@@ -18,9 +18,9 @@ One entry point that picks a playbook, runs the research skills in a fixed order
 | field status, trends, literature review, "what is known about X" | [playbooks/status.md](playbooks/status.md) |
 | research topics, gaps, next project, "what should I work on" | [playbooks/topics.md](playbooks/topics.md) |
 | resume, "이어서" | the playbook named in the topic folder's `run.jsonl`; continue after its last logged step (`event: done` means finished) |
-| where a concept came from, how it branched | research-lineage directly (no pilot playbook yet) |
-| is this one idea new | research-topic-scout step 4 directly |
-| turn a paper's method into calculations | literature-to-calculation directly |
+| where a concept came from, how it branched, what is mainstream now | [playbooks/lineage.md](playbooks/lineage.md) |
+| is this one idea new, has someone done X | [playbooks/novelty.md](playbooks/novelty.md) |
+| turn a recommended topic or a paper's method into calculations | [playbooks/calculation.md](playbooks/calculation.md) |
 
 Two readings both plausible and the choice is reversible: pick one, say which in one line, continue. Dry run (예행, "비용만", `--dry-run`): run the playbook to checkpoint ① and stop there; spend nothing on search or reading.
 

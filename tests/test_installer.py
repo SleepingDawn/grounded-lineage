@@ -26,7 +26,8 @@ class InstallTests(unittest.TestCase):
             self.assertTrue((scout / 'references/question-card.md').is_file())
             pilot = Path(root) / 'research-pilot'
             install(pilot, Path('/opt/test/bin/scholarly-access-agent'), SKILLS_DIR / 'research-pilot')
-            for rel in ('worker.md', 'playbooks/status.md', 'playbooks/topics.md', 'references/cost.md'):
+            for rel in ('worker.md', 'playbooks/status.md', 'playbooks/topics.md', 'playbooks/lineage.md',
+                        'playbooks/novelty.md', 'playbooks/calculation.md', 'references/cost.md'):
                 self.assertTrue((pilot / rel).is_file(), rel)
 
     def test_skill_links_resolve(self):
