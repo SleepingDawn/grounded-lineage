@@ -37,6 +37,8 @@ Record each stage's measured tokens with `scholarly-access-agent cost record` (r
 ### 1. Gap matrix
 Choose two or three axes the review supports (DFT/MLIP: material system × property × model type; others: population × outcome × method). Fill each cell from the records: paper numbers `[n]` and the strongest claim level (`speculative < observed < supported < strong`; abstract-only records count as `speculative` at most). Mark every cell as one of: `covered`, `contested` (records disagree), `thin` (one paper or only abstract-level), `empty-unsearched`, `empty-searched`. Also list each record's `limitations` and the review's stated open questions. Tag gaps by type: literature, methodological, application, interdisciplinary, temporal.
 
+**With `lineage.json`** (research-lineage ran for this topic): take one matrix axis from its `axes` (the questions that split the field) unless the user named the axes. Read its `lanes`, `nodes` and `trends` for two more kinds of candidate: a branch whose newest node is several years old while the field around it moved on (temporal gap: was it abandoned for a reason the reading shows, or simply left?), and a current default in `verdict` whose weak point no branch addresses (methodological gap). The lineage's evidence labels carry over: a node it marks abstract-only is `speculative` here too.
+
 ### 2. Check empty cells
 An empty cell may only mean the review never looked there. For each `empty-unsearched` cell that could become a topic (cap: 10, or the budget), a `locator` runs 2–3 keyword searches and returns candidates with identifiers only. The main agent turns a cell into `empty-searched` (queries logged) or fills it from what was found, reading only abstracts at this step.
 
@@ -65,6 +67,13 @@ A card is **recommended** only when all five hold; otherwise its decision is `re
 ### 8. Report
 `ideas/README.md` in the user's language: the matrix (compact), recommended cards first with evidence numbers `[n]` matching the review's reference list, then `read more` cards with what is missing, then dropped ideas with the reason. Include the overlap table per recommended card, the readiness checks, the model rows used, and estimated vs measured tokens. Render with `render_report_pdf` like the review (HTML by default). File the closest prior-work papers in ReadCube list `snu-research-agent/<Topic>` when its tools are available.
 
+## After the report (only when the user asks or accepts)
+
+Each is offered in one line at the end, never started on its own, also under auto-recommend.
+
+- **Refine one card in dialogue.** For the card the user picks, hand it to ARS `academic-research-skills:deep-research` in socratic mode: pass the card file, its novelty record and the review's evidence records as context, and say the gap, novelty and feasibility checks are done, so the dialogue sharpens the question, hypothesis and design rather than re-searching. Its agents take their rows from research-models.md. Write the refined question back into the card as a new version (`C3 v2`) and rerun steps 4 and 7 for it only if its question, system or method changed.
+- **Watch for competing work.** Creates a standing schedule, so it needs the user's yes. A weekly task (Claude desktop scheduled tasks, or the client's own scheduler) that, for each recommended card, runs novelty-check strategies 1 and 5 (exact technique + system; preprints of the last week) with the card's keywords, `locator` row, no full-text reading. It appends new candidates with identifiers to `ideas/watch.md` and flags any that shares at least two of the card's question, system and method; a flagged paper is read and graded in the next run of this skill, which may change the card's verdict. The task never edits cards, never sends the idea as a sentence, and stops when the user cancels it or every card is decided `stop`.
+
 ## Common mistakes
 
 | Mistake | Instead |
@@ -74,4 +83,5 @@ A card is **recommended** only when all five hold; otherwise its decision is `re
 | Sending the idea sentence to a search engine | Search with technical keywords only (novelty-check.md) |
 | Scoring ideas 1–10 on gut feeling | Use the readiness gate; it names what is missing |
 | Re-reading papers the review already read | Use the evidence records; read only new or closest papers |
+| Starting the socratic dialogue or a watch task unasked | Offer them in one line after the report; act on a yes |
 | Recommending what the user cannot run | Apply the profile at step 3, check at step 5 |
