@@ -112,4 +112,6 @@ def main(argv=None) -> int:
     print(f"wrote {html_path}")
     print(f"      {vl_path}")
     print(caption)
+    for w in meta.get("warnings") or []:
+        print(f"warning: {w['rule']}: {w['message']}", file=sys.stderr)
     return 0

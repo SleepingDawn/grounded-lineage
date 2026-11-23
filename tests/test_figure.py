@@ -237,12 +237,45 @@ class FigureTests(unittest.TestCase):
         rules = [(f["line"], f["rule"]) for f in result["findings"]]
         self.assertIn((7, "figure_unknown_key"), rules)
         self.assertIn((7, "figure_unknown_result"), rules)
-        self.assertFalse(any(line == 5 for line, _ in rules))
+        # the good figure resolves; its takeaway's 2.7 comes only from lee2025 (abstract_only) -> warning, not error
+        self.assertEqual([r for line, r in rules if line == 5], ["figure_takeaway_rests_on_preliminary"])
+        self.assertFalse(any(f["level"] == "error" and f["line"] == 5 for f in result["findings"]))
         self.assertFalse(result["ok"])
-        self.assertEqual(result["summary"]["figure_findings"], 2)
+        # 2 provenance errors in bad.fig.json + its takeaway numbers match none of its (unresolved) rows (2)
+        # + the good figure's preliminary-only warning (1)
+        self.assertEqual(result["summary"]["figure_findings"], 5)
         self.assertIn("figs/bad.fig.json: row 1: no evidence/nobody.json",
                       [f["message"] for f in result["findings"]])
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreliminaryTakeawayTests(unittest.TestCase):
+    def test_takeaway_number_from_preliminary_rows_only_is_flagged(self):
+        from scholarly_access_agent.viz.figure import takeaway_findings
+        records = {"full": {"venue_type": "journal", "access": "fulltext_pdf", "read_via": "read_pdf",
+                            "criteria": [{"evidence": [{"pdf_page": 3, "read_mode": "pages"}]}]},
+                   "abs": {"venue_type": "conference_abstract", "access": "fulltext_pdf"}}
+        rows = [{"record": "full", "value": 12.0}, {"record": "abs", "value": 1.5}]
+        rules = [f["rule"] for f in takeaway_findings({"takeaway": "효과는 +1.5~12%"}, rows, records)]
+        self.assertEqual(rules, ["takeaway_rests_on_preliminary"])
+        self.assertEqual(takeaway_findings({"takeaway": "효과는 +2.7~12%"}, rows + [{"record": "full", "value": 2.7}],
+                                           records), [])
+        rules = [f["rule"] for f in takeaway_findings({"takeaway": "최대 40%"}, rows, records)]
+        self.assertEqual(rules, ["takeaway_number_not_in_rows"])
+
+
+class PreliminarySummaryTraceTests(unittest.TestCase):
+    def test_summary_number_only_in_preliminary_record_is_flagged(self):
+        from scholarly_access_agent.trace import trace_text
+        records = {"abs2026": {"title": "A", "year": 2026, "venue_type": "conference_abstract", "access": "abstract_only",
+                               "results": [{"id": "r", "quantity": "q", "value": 1.5, "unit": "%", "pdf_page": 1}]},
+                   "jnl2025": {"title": "B", "year": 2025, "venue_type": "journal", "access": "fulltext_pdf",
+                               "read_via": "read_pdf",
+                               "criteria": [{"evidence": [{"pdf_page": 2, "read_mode": "pages"}]}],
+                               "results": [{"id": "r", "quantity": "q", "value": 2.7, "unit": "%", "pdf_page": 2}]}}
+        text = "# T\n\n## 한눈에\n\n- 증가는 1.5%였다 [@abs2026].\n- 증가는 2.7%였다 [@jnl2025].\n"
+        rules = [f["rule"] for f in trace_text(text, records)["findings"]]
+        self.assertEqual(rules, ["summary_rests_on_preliminary"])

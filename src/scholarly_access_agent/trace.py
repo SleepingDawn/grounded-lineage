@@ -514,6 +514,8 @@ def _short(text: str, limit: int) -> str:
 
 
 def trace_text(text: str, records: dict[str, dict]) -> dict[str, Any]:
+    from scholarly_access_agent.evidence import is_preliminary
+
     findings: list[dict[str, Any]] = []
     rows: list[dict[str, Any]] = []
     for sentence in sentences(text):
@@ -547,6 +549,11 @@ def trace_text(text: str, records: dict[str, dict]) -> dict[str, Any]:
             if known and not where:
                 findings.append(_finding("warning", line, "number_not_in_record",
                                          f"{written} not in {', '.join(known)}", shown))
+            elif sentence["summary"] and where and all(is_preliminary(records[k]) for k in where):
+                findings.append(_finding("warning", line, "summary_rests_on_preliminary",
+                                         f"{written} comes only from preliminary evidence ({', '.join(where)}); "
+                                         "the summary needs a peer-reviewed full-text source or a 예비 근거 label",
+                                         shown))
         rows.append({"line": line, "text": shown, "keys": keys, "numbers": checked})
     counts = {level: sum(1 for f in findings if f["level"] == level) for level in ("error", "warning")}
     return {"ok": counts["error"] == 0, "sentences": rows, "findings": findings,

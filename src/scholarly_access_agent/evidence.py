@@ -123,6 +123,16 @@ def format_locator(loc: dict | None) -> str:
 
 # ---------------------------------------------------------------- labels
 
+def is_preliminary(record: dict) -> bool:
+    """예비 근거: a conference abstract, preprint or working paper, or an item not read in full
+    (term excerpts, citation context, abstract only, unavailable). A conclusion may not rest on these alone."""
+    if str(record.get("venue_type") or "") in PRELIMINARY_VENUES + ("working_paper",):
+        return True
+    if str(record.get("access") or "") in PRELIMINARY_ACCESS + ("unavailable",):
+        return True
+    return derive_label(record)["label"] in (LABEL_SECONDARY, LABEL_ABSTRACT, LABEL_NONE)
+
+
 def derive_label(record: dict) -> dict[str, str]:
     """{"label", "locator", "basis"} for one evidence record."""
     access = record.get("access")

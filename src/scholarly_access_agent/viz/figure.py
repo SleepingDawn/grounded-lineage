@@ -479,6 +479,31 @@ def records_of(topic: Path) -> dict[str, dict]:
     return dict(load_records(topic))
 
 
+def takeaway_findings(spec: dict, rows: list[dict], records: dict[str, dict]) -> list[dict]:
+    """Numbers in the takeaway (the figure title) that no row supports, or that only preliminary rows
+    (예비 근거: conference abstracts, preprints, items not read in full) support."""
+    from scholarly_access_agent.evidence import is_preliminary
+    from scholarly_access_agent.trace import number_tokens, values_match
+
+    out = []
+    for written, value in number_tokens(str(spec.get("takeaway") or "")):
+        backing = []
+        for d in rows:
+            nums = [d.get(k) for k in ("value", "lo", "hi", "x", "y")]
+            if any(isinstance(n, (int, float)) and values_match(written, value, float(n)) for n in nums):
+                backing.append(d)
+        if not backing:
+            out.append({"level": "warning", "rule": "takeaway_number_not_in_rows",
+                        "message": f"takeaway number {written} matches no row of the figure"})
+            continue
+        recs = [records.get(d.get("record")) for d in backing if d.get("record") in records]
+        if recs and all(is_preliminary(r) for r in recs):
+            out.append({"level": "warning", "rule": "takeaway_rests_on_preliminary",
+                        "message": f"takeaway number {written} comes only from preliminary evidence "
+                                   f"({', '.join(sorted({d.get('record') for d in backing}))})"})
+    return out
+
+
 def build(topic: Path, spec: dict, spec_name: str = "") -> tuple[dict, dict]:
     for k in ("question", "takeaway"):
         if not str(spec.get(k) or "").strip():
@@ -523,7 +548,8 @@ def build(topic: Path, spec: dict, spec_name: str = "") -> tuple[dict, dict]:
         notes.append(f"미확인 {info['unread']}건 생략")
     if spec.get("note"):
         notes.append(str(spec["note"]))
-    meta = {"points": len(rows), "studies": studies, "notes": notes, "title": title,
+    meta = {"warnings": takeaway_findings(spec, rows, records),
+            "points": len(rows), "studies": studies, "notes": notes, "title": title,
             "source": f"evidence/ {studies}편의 results ({len(rows)}개 값{', ' + spec_name if spec_name else ''})"}
     return out, meta
 
@@ -561,7 +587,10 @@ def check_report(text: str, folder: Path, records: dict[str, dict]) -> list[dict
                 findings.append({"level": "error", "line": no, "rule": "figure_spec_invalid", "message": str(exc),
                                  "sentence": name})
                 continue
-            _, problems, _ = resolve_rows(spec, records)
+            resolved, problems, _ = resolve_rows(spec, records)
+            for p in takeaway_findings(spec, resolved, records):
+                findings.append({"level": p["level"], "line": no, "rule": f"figure_{p['rule']}",
+                                 "message": f"{name}: {p['message']}", "sentence": name})
             for p in problems:
                 row = f"row {p['row'] + 1}: " if p["row"] is not None else ""
                 findings.append({"level": p["level"], "line": no, "rule": f"figure_{p['rule']}",
