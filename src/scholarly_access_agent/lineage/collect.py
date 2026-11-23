@@ -25,7 +25,7 @@ import shutil
 from collections import Counter
 from pathlib import Path
 
-from .openalex import FIELDS, fetch_citing, fetch_many, search, short, top_mixed
+from .openalex import FIELDS, SPLIT_HINT, check_query, fetch_citing, fetch_many, search, short, top_mixed
 
 
 def search_keyword(kw: str, context: str, limit: int) -> dict:
@@ -61,11 +61,20 @@ def main(argv=None) -> int:
     ap.add_argument("--ancestors", type=int, default=0)
     ap.add_argument("--per-ancestor", type=int, default=40)
     ap.add_argument("--focus", default="")
-    a = ap.parse_args(argv)
+    a, extra = ap.parse_known_args(argv)
+    if extra:
+        ap.error(f"unrecognized arguments: {' '.join(extra)}" + (f". {SPLIT_HINT}" if a.query else ""))
 
+    seeds = [short(s) for s in a.seeds]
+    # validate before any network call or output directory is created
+    bad = [s for s in seeds if not re.fullmatch(r"[Ww]\d+", s)]
+    if bad:
+        ap.error(f"seeds must be OpenAlex work IDs (W123...), got {bad[:5]}"
+                 + (f". {SPLIT_HINT}" if a.query else ""))
+    for q in a.query:
+        check_query(q)
     out_dir = Path(a.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    seeds = [short(s) for s in a.seeds]
     corpus: dict = {}
     role: dict = {}
 

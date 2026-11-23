@@ -31,7 +31,7 @@ data efficient""".split())
 def label(w):
     a = w.get("authorships") or []
     first = a[0]["author"]["display_name"].split()[-1] if a else "?"
-    return f"{first} {w.get('publication_year')}"
+    return f"{first} {w.get('publication_year') or 'n.d.'}"
 
 
 def main(argv=None):
@@ -69,15 +69,21 @@ def main(argv=None):
 
         merge(fetch_many(need, fields=REF_FIELDS, on_chunk=merge))
     allw = {**meta, **corpus}
+    # OpenAlex returns publication_year: null for some records (often arXiv-like ones).
+    # Year-based statistics skip them; how many were skipped is reported.
+    no_year = sorted(k for k, w in corpus.items() if not w.get("publication_year"))
 
     # ---- 2. RPYS ---------------------------------------------------------
     # n_refs by cited year, weighted by how often each ref is cited in the field
     yr = Counter()
+    refs_no_year = 0
     for r, n in field_refs.items():
         y = (allw.get(r) or {}).get("publication_year")
         if y:
             yr[y] += n
-    years = range(min(yr), max(yr) + 1)
+        elif r in allw:  # metadata known but undated (refs below MIN_REF are not fetched at all)
+            refs_no_year += 1
+    years = range(min(yr), max(yr) + 1) if yr else range(0)
     rpys = []
     for y in years:
         win = [yr.get(t, 0) for t in range(y - 2, y + 3)]
@@ -118,10 +124,12 @@ def main(argv=None):
         for k in c:
             cref.update(fset[k])
         members = sorted(c, key=lambda k: -corpus[k]["cited_by_count"])
-        yrs = [corpus[k]["publication_year"] for k in c]
+        yrs = [corpus[k]["publication_year"] for k in c if corpus[k].get("publication_year")]
         clusters.append({
             "cluster": ci, "size": len(c),
-            "years": f"{min(yrs)}-{max(yrs)}", "median_year": statistics.median(yrs),
+            "years": f"{min(yrs)}-{max(yrs)}" if yrs else "n.d.",
+            "median_year": statistics.median(yrs) if yrs else None,
+            "no_year": len(c) - len(yrs),
             "words": [w for w, _ in words.most_common(10)],
             "top_members": [(label(corpus[k]), corpus[k]["cited_by_count"], corpus[k]["title"][:110], k)
                             for k in members[:8]],
@@ -140,9 +148,10 @@ def main(argv=None):
             if r in nodes and r != k:
                 D.add_edge(r, k)
     # citation cycles (preprint/version artefacts): drop edges that go backward in time,
-    # then break any remaining cycle one edge at a time
-    year = lambda k: (allw.get(k) or {}).get("publication_year") or 0
-    D.remove_edges_from([(u, v) for u, v in D.edges if year(u) > year(v)])
+    # then break any remaining cycle one edge at a time. Undated nodes keep their edges
+    # (treating null as year 0 would cut every citation into them).
+    year = lambda k: (allw.get(k) or {}).get("publication_year")
+    D.remove_edges_from([(u, v) for u, v in D.edges if year(u) and year(v) and year(u) > year(v)])
     while not nx.is_directed_acyclic_graph(D):
         cyc = nx.find_cycle(D)
         D.remove_edge(*cyc[0])
@@ -179,8 +188,13 @@ def main(argv=None):
         "main_path": [desc(k) for k in main_path],
         "top_spc_edges": [(s, desc(u), desc(v)) for (u, v), s in top_edges],
         "rpys_series": rpys,
-        "forward_by_year": Counter(corpus[k]["publication_year"] for k in fwd),
+        "forward_by_year": Counter(corpus[k]["publication_year"] for k in fwd if corpus[k].get("publication_year")),
+        "missing_year": {"corpus": no_year, "forward": sum(1 for k in fwd if k in set(no_year)),
+                         "field_refs": refs_no_year},
     }
+    if no_year or refs_no_year:
+        print(f"note: skipped {len(no_year)} corpus record(s) and {refs_no_year} reference(s) without "
+              f"publication year in year-based statistics", file=sys.stderr)
     (d / "analysis.json").write_text(json.dumps(res, indent=1, ensure_ascii=False), encoding="utf-8")
 
     text = report_text(res)
@@ -199,7 +213,8 @@ def report_text(res):
     out += [f"{n:4d}  {s}" for n, s in res["core_ancestors"]]
     out += ["", "== Clusters =="]
     for c in res["clusters"]:
-        out += ["", f"[C{c['cluster']}] size={c['size']} years={c['years']} median={c['median_year']}",
+        undated = f" (+{c['no_year']} undated)" if c.get("no_year") else ""
+        out += ["", f"[C{c['cluster']}] size={c['size']} years={c['years']}{undated} median={c['median_year']}",
                 "  words: " + ", ".join(c["words"])]
         out += [f"   * {m}" for m in c["top_members"]]
         out.append("  refs:")
@@ -207,5 +222,11 @@ def report_text(res):
     out += ["", "== Main path =="]
     out += [f"  -> {s}" for s in res["main_path"]]
     out += ["", f"== forward by year == {dict(sorted(res['forward_by_year'].items()))}"]
+    miss = res.get("missing_year") or {}
+    if miss.get("corpus") or miss.get("field_refs"):
+        ids = miss.get("corpus") or []
+        out.append(f"   skipped in year-based statistics: {len(ids)} corpus record(s) without publication year"
+                   f" ({miss.get('forward', 0)} forward){': ' + ', '.join(ids[:10]) if ids else ''}"
+                   f"{' ...' if len(ids) > 10 else ''}; {miss.get('field_refs', 0)} undated reference(s) left out of RPYS")
     return "\n".join(out) + "\n"
 

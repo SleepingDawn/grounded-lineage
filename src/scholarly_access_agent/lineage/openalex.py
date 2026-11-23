@@ -153,10 +153,36 @@ def fetch_citing(wid: str, limit: int | None = None) -> dict:
     return out
 
 
+SPLIT_HINT = ("Windows PowerShell 5.1 drops the double quotes inside a quoted argument and splits it into words "
+              "when it calls a native program, so one query arrives as several. Run lineage commands from Bash "
+              "(Git Bash) on Windows, or write each inner double quote as \\\" in PowerShell.")
+
+
 def check_query(q: str) -> str:
     if "," in q:
         raise ValueError("commas break OpenAlex filter syntax; use OR between terms instead")
+    if q.count('"') % 2:
+        raise ValueError(f"unbalanced double quote in query {q!r}. {SPLIT_HINT}")
+    depth = 0
+    for part in q.split('"')[::2]:  # parentheses outside "quoted phrases"
+        for ch in part:
+            depth += {"(": 1, ")": -1}.get(ch, 0)
+            if depth < 0:
+                break
+        if depth < 0:
+            break
+    if depth:
+        raise ValueError(f"unbalanced parentheses in query {q!r}. {SPLIT_HINT}")
     return q
+
+
+def split_warning(queries: list, labels: list) -> str:
+    """Several single-word queries with fewer labels than queries: the shell probably split one query."""
+    bare = [q for q in queries if len(q.split()) == 1]
+    if len(queries) >= 3 and len(bare) >= 2 and len(labels) < len(queries):
+        return (f"warning: {len(queries)} queries ({len(bare)} of them single words) but {len(labels)} label(s); "
+                f"if you meant fewer queries, the shell split them. {SPLIT_HINT}")
+    return ""
 
 
 def search(q: str, limit: int, select: str = FIELDS, prefer_relevance: bool = True) -> dict:

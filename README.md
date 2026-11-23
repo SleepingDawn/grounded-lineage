@@ -54,7 +54,7 @@ python3 -m venv .venv
 .venv/bin/scholarly-access-agent doctor
 ```
 
-On Windows the executables are in `.venv\Scripts\`; set `PYTHONUTF8=1`.
+On Windows the executables are in `.venv\Scripts\`; set `PYTHONUTF8=1`. Run `lineage query-test` and `lineage collect --query` from Bash (Git Bash): Windows PowerShell 5.1 drops the double quotes inside a quoted query and splits it into words (in PowerShell, write each inner quote as `\"`). Both commands refuse a query with unbalanced parentheses or quotes, which is the usual sign of such a split.
 
 **Register the MCP server** (`setup` installs skills only, not the MCP entry). Templates: `examples/claude-mcp.json`, `examples/codex-mcp.toml`; replace the executable path.
 

@@ -88,6 +88,8 @@ def run(d: Path, scope: str, method: str, since: int | None = None, founders: li
         "share": round(len(num) / len(den), 3) if den else 0.0,
         "no_abstract": sum(1 for w in den.values() if not w.get("abstract_inverted_index")),
         "per_year": per_year,
+        # undated records count in the totals but not in per_year (and are dropped by --since)
+        "no_year": sum(1 for w in den.values() if not w.get("publication_year")),
         "founders": founders, "founders_from": founders_from, "founder_authors": len(f_authors),
         "founders_first_author_only": partial,
         "self_citing": len(self_ids), "self_share": round(len(self_ids) / len(num), 3) if num else 0.0,
@@ -125,6 +127,9 @@ def main(argv=None) -> int:
     print(f"no abstract: {res['no_abstract']} of the denominator (title-only match; counts are lower bounds)")
     for y, v in res["per_year"].items():
         print(f"  {y}: {v['method']}/{v['scope']} ({v['share']:.0%})")
+    if res["no_year"]:
+        print(f"no year    : {res['no_year']} of the denominator have no publication year (in the totals, "
+              f"not in the per-year rows)")
     note = f"; {len(res['founders_first_author_only'])} founder(s) known by first author only" \
         if res["founders_first_author_only"] else ""
     print(f"self-citation: {res['self_citing']}/{res['numerator']} ({res['self_share']:.0%}) numerator papers share an "

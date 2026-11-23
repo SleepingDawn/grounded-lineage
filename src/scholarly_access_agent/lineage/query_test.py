@@ -31,11 +31,12 @@ import argparse
 import datetime
 import json
 import re
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .gold import load_ids as load_gold
-from .openalex import check_query, get, search as oa_search, short
+from .openalex import check_query, get, search as oa_search, short, split_warning
 from .searchlog import saturation, unsaturated_line
 from .topic import core_set, in_field
 
@@ -119,6 +120,9 @@ def main(argv=None):
         ap.error(f"{len(a.label)} labels for {len(a.query)} queries")
     for q in a.query:
         check_query(q)  # reject every malformed query before any network call
+    warn = split_warning(a.query, a.label)
+    if warn:
+        print(warn, file=sys.stderr, flush=True)
     d = Path(a.data_dir)
     gold, a.gold_source = gold_ids(a)
     if gold:

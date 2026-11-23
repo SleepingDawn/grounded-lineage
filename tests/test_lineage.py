@@ -157,6 +157,34 @@ class AnalysisTests(unittest.TestCase):
             self.assertIn("rpys_peaks", res)
             self.assertEqual(res["forward_by_year"], {"2025": 3, "2026": 3})
 
+    def test_analyze_skips_records_without_publication_year(self):
+        # OpenAlex returns publication_year: null for some records; analyze must not crash on them
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            corpus = synthetic_corpus(d)
+            corpus["F2"]["publication_year"] = None
+            corpus["F5"]["referenced_works"].append("https://openalex.org/N")
+            (d / "corpus.json").write_text(json.dumps(corpus), encoding="utf-8")
+            meta = json.loads((d / "refs_meta.json").read_text(encoding="utf-8"))
+            meta["N"] = {"id": "https://openalex.org/N", "title": "Undated preprint", "publication_year": None,
+                         "cited_by_count": 1, "authorships": [], "referenced_works": []}
+            (d / "refs_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+            with mock.patch.object(analyze, "fetch_many", side_effect=AssertionError("network used")):
+                with quiet():
+                    analyze.main([str(d)])
+            res = json.loads((d / "analysis.json").read_text(encoding="utf-8"))
+            text = (d / "analysis.txt").read_text(encoding="utf-8")
+            self.assertEqual(res["forward_by_year"], {"2025": 2, "2026": 3})
+            self.assertEqual(res["missing_year"]["corpus"], ["F2"])
+            self.assertEqual(res["missing_year"]["forward"], 1)
+            self.assertEqual(res["missing_year"]["field_refs"], 2)  # N, and F2 (cited by F3)
+            cl = [c for c in res["clusters"] if any(m[3] == "F2" for m in c["top_members"])]
+            self.assertTrue(cl)
+            self.assertEqual(cl[0]["no_year"], 1)
+            self.assertNotIn("None", cl[0]["years"])
+            self.assertTrue(res["main_path"])
+            self.assertIn("without publication year", text)
+
     def test_core_set_drops_generic_tools(self):
         with tempfile.TemporaryDirectory() as directory:
             d = Path(directory)
@@ -221,6 +249,42 @@ class QueryTestTests(unittest.TestCase):
             with mock.patch.object(query_test, "search", side_effect=AssertionError("network used")):
                 with self.assertRaises(ValueError):
                     query_test.main([str(d), "good AND query", '"a" OR b, c'])
+
+    def test_query_split_by_the_shell_is_caught(self):
+        # Windows PowerShell 5.1 stripped the inner quotes of
+        #   '("kinetic Monte Carlo" OR "kMC") AND (machine learning)' and split it into words
+        split = ["(kinetic", "Monte", "Carlo OR kMC)", "AND", "(machine", "learning)"]
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            synthetic_corpus(d)
+            with mock.patch.object(query_test, "search", side_effect=AssertionError("network used")):
+                with self.assertRaises(ValueError) as ctx:
+                    query_test.main([str(d), *split, "--label", "q1"])
+            self.assertIn("PowerShell", str(ctx.exception))
+            self.assertFalse((d / "queries.json").exists())
+        for ok in ['("a b" OR c) AND d', '"phrase (with paren" AND x', "plain"]:
+            self.assertEqual(openalex.check_query(ok), ok)
+        for bad in ["(kinetic", "state)", '"open phrase', ")a("]:
+            with self.assertRaises(ValueError):
+                openalex.check_query(bad)
+        # balanced single words: not an error, but a warning when labels are fewer than queries
+        self.assertIn("PowerShell", openalex.split_warning(["kinetic", "Monte", "Carlo"], ["q1"]))
+        self.assertEqual(openalex.split_warning(["kinetic", "Monte", "Carlo"], ["a", "b", "c"]), "")
+        self.assertEqual(openalex.split_warning(['"a b" AND c', "d OR e"], []), "")
+
+    def test_collect_rejects_split_query_words_as_seeds(self):
+        from scholarly_access_agent.lineage import collect
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "out"
+            for args, msg in ((["W123", "--query", "kinetic", "Monte", "Carlo"], "unrecognized arguments"),
+                              (["--query", "kinetic", "Monte", "Carlo", "W123"], "OpenAlex work IDs")):
+                err = io.StringIO()
+                with mock.patch.object(collect, "fetch_many", side_effect=AssertionError("network used")), \
+                        contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+                    collect.main([str(out), *args])
+                self.assertIn(msg, err.getvalue())
+                self.assertIn("PowerShell", err.getvalue())
+                self.assertFalse(out.exists())
 
 
 class PageAndReportTests(unittest.TestCase):
