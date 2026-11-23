@@ -27,6 +27,17 @@ Keep `max_chars` small (4–8k) for term searches and raise it only for the sect
 ## Delegating reading to sub-agents
 When the Tier 2–3 list exceeds about 15 papers, split it into batches of 4–6 papers per sub-agent and run batches in parallel. Before dispatching, run the session preflight (`doctor` with `probe_url`, publisher-routes.md) so subscription papers do not end at the abstract. Give each sub-agent: the question, the criteria from dft-mlip.md (or the task's own), the paper identifiers and the route from publisher-routes.md for each, the tier rules above, and the instruction to return only evidence records in evidence-format.md (JSON, ≤ 300 words per paper) with section names or PDF pages. Sub-agents must not write the synthesis. The main agent merges records, resolves version conflicts, spot-checks the 3–5 numbers the conclusion rests on with `read_url`/`read_pdf`, then writes the synthesis. Sub-agents follow the same access rules; delegation never relaxes them.
 
+## Models and reasoning effort
+Sub-agent judgments (is this a method the study used, which version was read) become report evidence, and the main agent re-checks only a few numbers, so readers run as strong as the main agent.
+
+| Role | Claude Code | Codex | Effort: Default / Deep |
+| --- | --- | --- | --- |
+| Main agent (plan, screen, resolve versions, synthesize) | Opus | the session model | `high` / `xhigh` |
+| Reading sub-agents (Tier 2–3) | Agent tool `model: "opus"`, `effort: "high"` | `spawn_agent` with `reasoning_effort: "high"`, no model override | `high` / `high` |
+
+- Pass the sub-agent values explicitly at every spawn; never rely on the client default. Never use small fast models (Haiku, `*-luna` and similar) for Tier 2–3 reading.
+- The main agent cannot change its own model or effort. If the session runs below its row (for example Deep on `medium`), say so once at the start, with the recommended setting, and continue.
+
 ## Searching and stopping
 Search question variants and competing results. For trends use current-year/preprint coverage alongside recent peer-reviewed evidence. Screen titles/abstracts, then inspect the shortlist's main Methods/Results and relevant supplements. Record what was actually read. Term results are locators, not a quality score.
 

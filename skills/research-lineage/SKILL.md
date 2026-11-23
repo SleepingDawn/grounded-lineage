@@ -83,7 +83,7 @@ Order: pass 1 (step 4) = the seed (journal version; publisher pages may need `do
 
 Abstracts suffice for follow-up and frontier nodes whose role the abstract states, for bulk counts (`lineage mentions`, cluster labels), and for precursors needed only for their position. A paper that cannot be retrieved stays at the level of what you saw; record which route failed.
 
-A claim about paper X read in review Y is `fulltext` with `evidence: "Y §III.1"`. More than ~5 papers: one subagent per batch, each returning section/page-grounded notes.
+A claim about paper X read in review Y is `fulltext` with `evidence: "Y §III.1"`. More than ~5 papers: one subagent per batch, each returning section/page-grounded notes; spawn them with the model and effort in snu-library-scholarly-access `references/research-workflow.md` (Models and reasoning effort).
 
 ## Branch axes and lanes: emerge, then consolidate
 
