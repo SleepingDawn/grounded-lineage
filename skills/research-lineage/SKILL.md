@@ -36,7 +36,7 @@ When unsure which mode fits, use topic mode if the user named a subject rather t
 |---|------|-----|----|
 | 1 | Seed | Agent (ask the user only if two readings of the topic are plausible) | `lineage seed "<title words or DOI>"`. Pick the paper that defined the concept, journal record first. 1–3 seeds. |
 | 2 | Collect | Script | `lineage init <Topic>`, then in that folder `lineage collect data <SEED...>` |
-| 3 | Analyze | Script → Agent | `lineage analyze data` (saves `data/analysis.txt` itself; no need to capture stdout); read it and interpret it (below). Start the branch-candidate log. |
+| 3 | Analyze | Script → Agent | `lineage analyze data` (prints a short summary, saves the full report to `data/analysis.txt`; do not discard its output, errors and the fetch estimate are printed there). Read `analysis.txt` and interpret it (below). Start the branch-candidate log. |
 | 4 | Read, pass 1 | Agent | The seed and two reviews from different camps (reading plan below). Collect their vocabulary as you read. |
 | 5 | Vocabulary and widening | Agent → Script | Build concept blocks, test them all in one batch `lineage query-test` call, widen with the queries that pass (below). Skipped: say why in `meta.expansion_note`. |
 | 6 | Read, pass 2 | Agent | Founders of uncovered lanes, both sides of contested claims, important papers that widening surfaced. |
@@ -61,9 +61,10 @@ The report's method section names both search routes: the native searches logged
 
 ## Interpreting the analysis (step 3)
 
-- RPYS peaks: drop years whose top references are generic tools of the parent field (DFT functionals, codes, statistics). Keep topic precursors and the parent field's founding papers. List kept years in `evidence.rpys_years`.
-- Main path: the global path usually runs through the parent field's trunk. Show only the topic-specific tail (`evidence.main_path_tail`) and say what was cut in `main_path_note`.
-- Clusters: label each by what its members do (`evidence.cluster_labels`).
+- RPYS peaks: counted over references outside the collected field (seeds and citing papers are left out). Drop years whose top references are generic tools of the parent field (DFT functionals, codes, statistics). Keep topic precursors and the parent field's founding papers. List kept years in `evidence.rpys_years`.
+- Main path: a key-route path inside the field (seeds and citing papers); earlier history is in RPYS and the core ancestors. If it still detours through a neighbouring community, show the topic-specific tail (`evidence.main_path_tail`) and say what was cut in `main_path_note`.
+- Clusters: the printed words are the ones over-represented in each cluster against the field; label each by what its members do (`evidence.cluster_labels`).
+- Seeds that predate the topic (method papers when the topic is method × new tool) make a corpus about the parent field: check how many citing papers match the topic (`lineage mentions data "<regex>"`). When few do, add a recent seed from the intersection or widen with tested queries before reading the analysis as the topic's flow.
 
 ## Vocabulary and widening (step 5)
 
@@ -138,4 +139,4 @@ Log every web, arXiv, KCI or publisher search the lineage relies on: `lineage lo
 | Taxonomy copied from the seed authors' perspective | Cross-check with a review from another camp. |
 | Box label taken from OpenAlex author order | OpenAlex sometimes mis-orders preprint authors (one 2026 arXiv paper listed its third author first). Check the first author on the paper or in ReadCube before labelling. |
 | Preprint and journal records split, citations split | Check both in `lineage seed`. `lineage links` links the journal record. |
-| `lineage analyze` on an expanded corpus fetches 10k+ references | `lineage analyze data_x 2`. |
+| `lineage analyze` fetch estimate is long | The default MIN_REF already caps the fetch at ~5,000 references; pass a larger MIN_REF (`lineage analyze data_x 3`) to cut it further, or 1 to fetch every reference. |

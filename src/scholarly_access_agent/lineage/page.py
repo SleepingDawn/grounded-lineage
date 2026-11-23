@@ -160,10 +160,8 @@ def validate(L):
         if n.get("evidence") is not None and not (isinstance(n["evidence"], str) and STEM_RE.match(n["evidence"])):
             errs.append(f"node {n.get('id')}: evidence must be the stem of a file in evidence/ "
                         "(\"larkin2014\" for evidence/larkin2014.json), without folder or .json")
-        fields = (("title", PILL_W - 10, 11),) if ev else (("title", BOX_W - 8, 12), ("sub", BOX_W - 6, 10.5))
-        for k, limit, size in fields:
-            w = text_px(n.get(k, ""), size)
-            if w > limit:
+        for k, w, limit, outer in text_overflow(n):
+            if w > outer:  # past the box outline; text inside the padding is only a warning (see warnings())
                 errs.append(f"node {n.get('id')}: {k} '{n.get(k)}' is ~{w:.0f}px wide, box fits {limit}px; shorten it "
                             f"({width_budget('event' if ev else k)})")
     if len(L["nodes"]) > 50:
@@ -224,6 +222,19 @@ def text_px(t, size):
     return sum(size * (1.0 if ord(ch) > 0x2E80 else 0.6) for ch in t or "")
 
 
+def text_overflow(n):
+    """(field, estimated px, padded limit, box outline) for each box text wider than its padded limit."""
+    ev = is_event(n)
+    fields = (("title", PILL_W),) if ev else (("title", BOX_W), ("sub", BOX_W))
+    out = []
+    for k, outer in fields:
+        key = "event" if ev else k
+        w = text_px(n.get(k, ""), TEXT_SIZE[key])
+        if w > TEXT_LIMIT[key]:
+            out.append((k, w, TEXT_LIMIT[key], outer))
+    return out
+
+
 def wrap(t, width, size):
     """Greedy line wrap at spaces (long words broken by character), using the text_px estimate."""
     lines, cur = [], ""
@@ -248,6 +259,11 @@ def wrap(t, width, size):
 
 def warnings(L):
     w = []
+    for n in L.get("nodes", []):
+        for k, px, limit, outer in text_overflow(n):
+            if px <= outer:
+                w.append(f"node {n.get('id')}: {k} '{n.get(k)}' is ~{px:.0f}px wide, {px - limit:.0f}px into the "
+                         f"box padding (limit {limit}px); fine to keep, shorter reads better")
     topic = mode(L) == "topic"
     lanes = L["lanes"]
     if len(lanes) > 10:

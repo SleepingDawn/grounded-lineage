@@ -177,13 +177,69 @@ class AnalysisTests(unittest.TestCase):
             self.assertEqual(res["forward_by_year"], {"2025": 2, "2026": 3})
             self.assertEqual(res["missing_year"]["corpus"], ["F2"])
             self.assertEqual(res["missing_year"]["forward"], 1)
-            self.assertEqual(res["missing_year"]["field_refs"], 2)  # N, and F2 (cited by F3)
+            self.assertEqual(res["missing_year"]["field_refs"], 1)  # N; F2 is a field paper, outside RPYS anyway
             cl = [c for c in res["clusters"] if any(m[3] == "F2" for m in c["top_members"])]
             self.assertTrue(cl)
             self.assertEqual(cl[0]["no_year"], 1)
             self.assertNotIn("None", cl[0]["years"])
             self.assertTrue(res["main_path"])
             self.assertIn("without publication year", text)
+
+    def test_seeds_are_not_their_own_ancestors_and_main_path_stays_in_the_field(self):
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            synthetic_corpus(d)
+            with mock.patch.object(analyze, "fetch_many", side_effect=AssertionError("network used")):
+                with quiet():
+                    analyze.main([str(d)])
+            res = json.loads((d / "analysis.json").read_text(encoding="utf-8"))
+            ids = lambda descs: [s.rsplit("| ", 1)[-1] for s in descs]
+            self.assertNotIn("S", ids(s for _, s in res["core_ancestors"]))
+            for _, _, _, tops in res["rpys_peaks"]:
+                self.assertFalse({"S", "F1", "F2", "F3", "F4", "F5", "F6"} & set(ids(tops)))
+            self.assertEqual(ids(res["main_path"]), ["S", "F1", "F2", "F3", "F4", "F5", "F6"])
+            self.assertTrue(res["min_ref_auto"])
+            self.assertEqual(res["min_ref"], 1)
+
+    def test_auto_min_ref_keeps_the_fetch_under_budget(self):
+        from collections import Counter
+        refs = Counter({f"R{i}": 1 for i in range(100)} | {f"T{i}": 2 for i in range(30)}
+                       | {f"U{i}": 4 for i in range(5)})
+        self.assertEqual(analyze.auto_min_ref(refs, budget=200), 1)
+        self.assertEqual(analyze.auto_min_ref(refs, budget=40), 2)
+        self.assertEqual(analyze.auto_min_ref(refs, budget=10), 3)
+        self.assertEqual(analyze.auto_min_ref(refs, budget=1), 5)
+
+    def test_unresolvable_references_are_not_requested_again(self):
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            corpus = synthetic_corpus(d)
+            corpus["F1"]["referenced_works"].append("https://openalex.org/GONE")
+            (d / "corpus.json").write_text(json.dumps(corpus), encoding="utf-8")
+            calls = []
+
+            def fake(ids, **kw):
+                calls.append(sorted(ids))
+                return {}  # OpenAlex returns nothing for a merged/deleted work
+            with mock.patch.object(analyze, "fetch_many", side_effect=fake), \
+                    quiet(), contextlib.redirect_stderr(io.StringIO()):
+                analyze.main([str(d)])
+                analyze.main([str(d)])
+            self.assertEqual(calls, [["GONE"]])
+            self.assertEqual(json.loads((d / "refs_missing.json").read_text(encoding="utf-8")), ["GONE"])
+
+    def test_cluster_words_are_distinctive_not_field_wide(self):
+        titles = {k: analyze.title_words(t) for k, t in {
+            "a": "Kinetic Monte Carlo of vacancy diffusion in iron", "b": "Kinetic Monte Carlo of vacancy clusters",
+            "c": "Kinetic Monte Carlo for surface catalysis", "d": "Kinetic Monte Carlo of catalysis on surfaces",
+            "e": "Estudio cerámico del material"}.items()}
+        df = analyze.Counter()
+        for w in titles.values():
+            df.update(w)
+        words = analyze.cluster_words(["a", "b"], df, len(titles), titles)
+        self.assertEqual(words[0], "vacancy")
+        self.assertNotIn("kinetic", words)
+        self.assertIn("cerámico", titles["e"])
 
     def test_core_set_drops_generic_tools(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -311,6 +367,14 @@ class PageAndReportTests(unittest.TestCase):
         self.assertTrue(any("out of range" in e for e in errs))
         self.assertTrue(any("Hangul or" in e for e in errs))  # tells the budget, not just the overflow
         self.assertEqual(page.validate(LINEAGE), [])
+
+    def test_title_inside_the_box_padding_is_a_warning_not_a_problem(self):
+        L = json.loads(json.dumps(LINEAGE))
+        L["nodes"][0]["title"] = "가나다라마바사아자차"  # 10 Hangul = ~120px: past the 112px limit, inside the 120px box
+        self.assertEqual(page.validate(L), [])
+        self.assertTrue(any("padding" in w for w in page.warnings(L)))
+        L["nodes"][0]["title"] = "가나다라마바사아자차카"  # ~132px: past the box outline
+        self.assertTrue(any("wide" in e for e in page.validate(L)))
 
     def test_check_warns_when_an_edge_is_drawn_through_another_box(self):
         L = json.loads(json.dumps(LINEAGE))

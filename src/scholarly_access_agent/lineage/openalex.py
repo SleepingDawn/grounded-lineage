@@ -97,13 +97,16 @@ def get(params: dict, tries: int = 8, sleep=time.sleep) -> dict:
                         f"(filter={str(params.get('filter', ''))[:80]!r})")
 
 
-def fetch_many(ids, fields: str = FIELDS, on_chunk=None) -> dict:
+def fetch_many(ids, fields: str = FIELDS, on_chunk=None, progress=None) -> dict:
+    """Works by OpenAlex ID, 50 per request. on_chunk(out) every 20 requests; progress(done, total) after each."""
     out: dict = {}
     ids = sorted({short(i) for i in ids})
     for n, k in enumerate(range(0, len(ids), 50)):
         d = get({"filter": "openalex_id:" + "|".join(ids[k:k + 50]), "per-page": 50, "select": fields})
         for w in d["results"]:
             out[short(w["id"])] = w
+        if progress:
+            progress(min(k + 50, len(ids)), len(ids))
         if on_chunk and n % 20 == 19:
             on_chunk(out)
     return out
