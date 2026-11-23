@@ -4,8 +4,8 @@ Each call appends one entry to DATA_DIR/searches.json (created on first use); `l
 lists them in the method section and the page shows them under the search log.
 
 Usage:
-  lineage log-search DIR --engine arXiv --query 'amorphous silica thermal conductivity MACE' \
-      --date 2026-11-20 --hits 14 --kept 'arXiv:2501.01234,W4400201232' [--note 'no a-SiO2 kappa with universal MLIP']
+  lineage log-search DIR --engine arXiv --query 'base editing off-target whole-genome sequencing in vivo' \
+      --date 2026-11-20 --hits 14 --kept 'arXiv:2501.01234,W4400201232' [--note 'none measures off-target edits in vivo']
 DIR is the topic folder (the log goes to its data dir: meta.data_dir of lineage.json, default data/) or a data
 folder itself. --kept lists what was kept (OpenAlex IDs, DOIs, arXiv IDs); empty means nothing relevant was found.
 

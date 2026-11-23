@@ -22,6 +22,11 @@ Usage:
     Batch: the queries are fetched in parallel (shared rate limit), then reported and logged in
     the given order, so strategy recall accumulates as if they had been run one by one. A
     summary table closes the run.
+  lineage query-test DATA_DIR 'Q1' 'Q2' --label q1 --label q2 --drop-blocks
+    Anchor check: each query is also run with one AND block dropped at a time. A block whose removal reveals
+    many in-field works (citation-anchored, so independent of wording) not yet collected is flagged ANCHOR: it
+    ties the search to one community's name for the concept. Logged to DATA_DIR/anchor_checks.json, not to
+    queries.json, so saturation and recall stay those of the real queries.
 QUERY is OpenAlex boolean syntax: "exact phrase", AND, OR, NOT, parentheses. Commas are not allowed.
 Example (one concept block per parenthesis):
   '("charge equilibration" OR "electronegativity equalization" OR "fluctuating charge" OR QEq)
@@ -110,6 +115,128 @@ def era_note(gold_years, result_years) -> str:
             "Add key papers from those years to the gold (`lineage gold freeze`), or judge them separately")
 
 
+def split_blocks(q: str) -> tuple[list, list]:
+    """(AND blocks, NOT blocks) at the top level of a boolean query; quotes and parentheses are respected.
+    A top-level OR (no parentheses around it) is ambiguous to split, so the query is then one block."""
+    ands, nots, cur, depth, inq, op, i = [], [], "", 0, False, "AND", 0
+    while i < len(q):
+        ch = q[i]
+        if ch == '"':
+            inq = not inq
+        elif not inq:
+            depth += {"(": 1, ")": -1}.get(ch, 0)
+        if not inq and depth == 0:
+            m = re.match(r"\s+(AND|OR|NOT)\s+", q[i:])
+            if m and m.group(1) == "OR":
+                return [q.strip()], []
+            if m:
+                if cur.strip():
+                    (nots if op == "NOT" else ands).append(cur.strip())
+                cur, op, i = "", m.group(1), i + m.end()
+                continue
+        cur += ch
+        i += 1
+    if cur.strip():
+        (nots if op == "NOT" else ands).append(cur.strip())
+    return ands, nots
+
+
+def drop_variants(q: str) -> list:
+    """[(dropped AND block, query without it)] for a query of two or more AND blocks; NOT blocks are kept."""
+    ands, nots = split_blocks(q)
+    if len(ands) < 2:
+        return []
+    tail = "".join(f" NOT {n}" for n in nots)
+    return [(b, " AND ".join(x for j, x in enumerate(ands) if j != i) + tail) for i, b in enumerate(ands)]
+
+
+def known_ids(d: Path) -> set:
+    known = set()
+    for name in ("corpus.json", "refs_meta.json"):
+        p = d / name
+        if p.exists():
+            known |= set(json.loads(p.read_text(encoding="utf-8")))
+    return known
+
+
+def field_stats(r: dict, top_n: int, core: set, known: set, recent_from: int, focus=None) -> dict:
+    """In-field (cites a core paper of the field: wording-independent) and not-yet-collected counts; with a
+    --focus regex, `rel` keeps only the new works that also match the topic."""
+    top = r["results"][:top_n]
+    on = [w for w in top if in_field(w, core)]
+    new = [w for w in on if short(w["id"]) not in known]
+    rel = [w for w in new if focus.search(text_of(w))] if focus else new
+    return {"hits": r["meta"]["count"], "top": len(top), "precision": len(on) / max(1, len(top)), "new": new,
+            "rel": rel, "new_recent": sum(1 for w in rel if (w.get("publication_year") or 0) >= recent_from)}
+
+
+BROAD = 20  # a variant with more than 20x the hits of the full query is too broad to compare in a top-N window
+
+
+def anchor_state(base: dict, var: dict) -> str:
+    """'anchor', 'broad' (the other blocks alone are too generic to judge) or ''."""
+    if var["hits"] > BROAD * max(1, base["hits"]):
+        return "broad"
+    n, n0 = len(var["rel"]), len(base["rel"])
+    if n >= 10 and n >= 2 * max(1, n0) and var["precision"] >= 0.3:
+        return "anchor"
+    return ""
+
+
+def anchor_check(d: Path, a, queries: list, labels: list, results: list):
+    """Drop each AND block in turn: a block whose removal reveals many in-field works not yet collected ties
+    the search to one community's wording (typically the topic's own name). Logged to anchor_checks.json."""
+    jobs = [(qi, b, vq) for qi, q in enumerate(queries) for b, vq in drop_variants(q)]
+    skipped = [labels[qi] or queries[qi][:40] for qi, q in enumerate(queries) if not drop_variants(q)]
+    print("\n== anchor check (each AND block dropped in turn) ==")
+    if skipped:
+        print(f"   skipped (fewer than two AND blocks): {', '.join(skipped)}")
+    if not jobs:
+        return []
+    with ThreadPoolExecutor(max_workers=max(1, min(a.workers, len(jobs)))) as pool:
+        got = list(pool.map(lambda j: search(j[2], a.top), jobs))
+    core, known = core_set(d), known_ids(d)
+    focus = re.compile(a.focus, re.I) if a.focus else None
+    recent_from = datetime.date.today().year - 2
+    base = {qi: field_stats(results[qi][0], a.top, core, known, recent_from, focus) for qi, _, _ in jobs}
+    log_p = d / "anchor_checks.json"
+    log = json.loads(log_p.read_text(encoding="utf-8")) if log_p.exists() else []
+    col = "on-topic new" if focus else "new"
+    print(f"{'query':20s} {'dropped block':32s} {'hits':>8s} {'in-field':>8s} {col:>12s} {'recent':>6s}")
+    flagged = []
+    for (qi, b, vq), r in zip(jobs, got):
+        s = field_stats(r, a.top, core, known, recent_from, focus)
+        state = anchor_state(base[qi], s)
+        name = labels[qi] or queries[qi][:20]
+        mark = {"anchor": "  <- ANCHOR" if focus else "  <- candidate ANCHOR",
+                "broad": "  (too broad without it)"}.get(state, "")
+        print(f"{name[:20]:20s} {b[:32]:32s} {s['hits']:>8,} {s['precision']:>8.0%} {len(s['rel']):>12} "
+              f"{s['new_recent']:>6}{mark}")
+        examples = sorted(s["rel"], key=lambda w: -(w.get("cited_by_count") or 0))[:5]
+        if state == "anchor":
+            flagged.append((name, b, len(s["rel"]), len(base[qi]["rel"])))
+            for w in examples:
+                print(f"      {short(w['id'])} {w.get('publication_year')} {(w.get('title') or '')[:80]}")
+        log.append({"date": datetime.date.today().isoformat(), "label": labels[qi], "query": queries[qi],
+                    "dropped": b, "variant": vq, "hits": s["hits"], "top": s["top"], "focus": a.focus,
+                    "precision": round(s["precision"], 3), "new_in_field": len(s["new"]),
+                    "new_on_topic": len(s["rel"]) if focus else None, "new_recent": s["new_recent"],
+                    "base_hits": base[qi]["hits"], "base_new": len(base[qi]["rel"]), "state": state,
+                    "examples": [{"id": short(w["id"]), "year": w.get("publication_year"), "title": w.get("title")}
+                                 for w in examples]})
+    log_p.write_text(json.dumps(log, indent=1, ensure_ascii=False), encoding="utf-8")
+    for name, b, n, n0 in flagged:
+        what = "on-topic (--focus)" if focus else "in-field"
+        print(f"ANCHOR in {name}: without {b[:60]} the search finds {n} {what} works not yet collected (full query: "
+              f"{n0}). If that block is one name for a concept, describe the concept by what the work does "
+              "(synonyms, method or function terms) instead; if it defines the topic, keep it"
+              + ("" if focus else " (add --focus with a topic regex to tell which)") + ".")
+    if any(e["state"] == "broad" for e in log[-len(jobs):]):
+        print("too broad: the remaining blocks alone match over 20x the hits, so a top-N comparison says nothing; "
+              "make those blocks more specific before judging that dropped block.")
+    return flagged
+
+
 def fetch(query, top_n, gold):
     """Network part of one query test (search + recall); safe to run in parallel threads."""
     r = search(query, top_n)
@@ -134,6 +261,9 @@ def main(argv=None):
     ap.add_argument("--label", action="append", default=[],
                     help="label per query, repeated in the same order as the queries")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--drop-blocks", action="store_true",
+                    help="anchor check: also test each query with one AND block dropped at a time and flag blocks "
+                         "whose removal reveals many in-field works not yet collected (anchor_checks.json)")
     a = ap.parse_args(argv)
     if len(a.label) > len(a.query):
         ap.error(f"{len(a.label)} labels for {len(a.query)} queries")
@@ -167,6 +297,9 @@ def main(argv=None):
     if state and not state["saturated"]:
         print(f"{unsaturated_line(state)}; none of the {state['n']} logged queries in {d / 'queries.json'} "
               "is SATURATED, so the search has not converged: vary the vocabulary or report it as unsaturated")
+    if a.drop_blocks:
+        labels = [a.label[i] if i < len(a.label) else "" for i in range(len(a.query))]
+        anchor_check(d, a, a.query, labels, results)
 
 
 def report_one(d, a, query, label, gold, r, found, missed, gold_years=None):

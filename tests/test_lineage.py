@@ -629,6 +629,62 @@ class WorkspaceTests(unittest.TestCase):
                 workspace.init("../escape")
 
 
+class AnchorCheckTests(unittest.TestCase):
+    """A topic's name can tie the search to one camp's wording; dropping blocks one at a time exposes it."""
+
+    def test_blocks_split_at_top_level_only(self):
+        self.assertEqual(query_test.split_blocks('"a b" AND (c OR d) NOT (e OR f)'), (['"a b"', "(c OR d)"], ["(e OR f)"]))
+        self.assertEqual(query_test.split_blocks('a AND "b AND c" AND (d AND e)')[0], ["a", '"b AND c"', "(d AND e)"])
+        self.assertEqual(query_test.split_blocks('"p" OR "q" AND r'), (['"p" OR "q" AND r'], []))  # ambiguous: whole
+        self.assertEqual(query_test.drop_variants("x"), [])
+        self.assertEqual(query_test.drop_variants('"a b" AND c NOT d'), [('"a b"', "c NOT d"), ("c", '"a b" NOT d')])
+
+    def test_anchor_state(self):
+        base = {"hits": 50, "rel": [1] * 2}
+        mk = lambda hits, n, p: {"hits": hits, "rel": [1] * n, "precision": p}
+        self.assertEqual(query_test.anchor_state(base, mk(300, 25, 0.6)), "anchor")
+        self.assertEqual(query_test.anchor_state(base, mk(300, 25, 0.1)), "")       # mostly outside the field
+        self.assertEqual(query_test.anchor_state(base, mk(300, 3, 0.9)), "")        # little gained
+        self.assertEqual(query_test.anchor_state(base, mk(50_000, 40, 0.6)), "broad")  # top-N window says nothing
+
+    def test_anchor_check_flags_the_name_block_and_keeps_the_query_log_clean(self):
+        with tempfile.TemporaryDirectory() as directory:
+            d = Path(directory)
+            synthetic_corpus(d)  # core paper of the field: A
+
+            def hit(i, title):
+                return {"id": f"https://openalex.org/N{i}", "title": title, "publication_year": 2026,
+                        "cited_by_count": 1, "referenced_works": ["https://openalex.org/A"]}
+            full = {"results": [], "meta": {"count": 4}}
+            without_name = {"results": [hit(i, f"School meal programme and child growth {i}") for i in range(30)],
+                            "meta": {"count": 60}}
+            without_other = {"results": [hit(100 + i, f"Unrelated cohort {i}") for i in range(3)],
+                             "meta": {"count": 20}}
+
+            def fake_search(q, n):
+                if q.startswith('"nutrition transfer"'):
+                    return full if "AND" in q else without_other
+                return without_name
+            out = io.StringIO()
+            with mock.patch.object(query_test, "search", side_effect=fake_search), \
+                    mock.patch.object(query_test, "get", return_value={"results": []}), \
+                    contextlib.redirect_stdout(out):
+                query_test.main([str(d), '"nutrition transfer" AND (growth OR stunting)', "--label", "q1",
+                                 "--list", "0", "--drop-blocks", "--focus", "growth|stunting", "--gold", "S"])
+            text = out.getvalue()
+            self.assertIn("ANCHOR in q1: without \"nutrition transfer\"", text)
+            self.assertEqual(len(json.loads((d / "queries.json").read_text(encoding="utf-8"))), 1)  # variants not logged
+            checks = json.loads((d / "anchor_checks.json").read_text(encoding="utf-8"))
+            self.assertEqual([c["state"] for c in checks], ["anchor", ""])
+            self.assertEqual(checks[0]["new_on_topic"], 30)
+
+    def test_field_wide_tags_are_found_from_the_data(self):
+        from collections import Counter
+        from scholarly_access_agent.lineage import keywords
+        df = Counter({"randomized controlled trial": 40, "statin": 50, "myopathy": 6, "lipid lowering": 12})
+        self.assertEqual(keywords.generic_tags(df, 100), {"randomized controlled trial", "statin"})
+
+
 class EraBalanceTests(unittest.TestCase):
     """Recent work gets in without pushing out the classics; the check warns about either era going missing."""
 

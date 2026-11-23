@@ -2,13 +2,14 @@
 
 1. Collect OpenAlex keyword tags of the seed's citing papers and of the core ancestors
    (references cited >= MIN_ANC times by the field).
-2. Rank tags by how many of those documents carry them; drop generic ones.
+2. Rank tags by how many of those documents carry them; drop field-wide ones (on >= 30% of them).
 3. For each candidate, count works whose title/abstract match `"tag" AND (CONTEXT)`
    and how many of a 50-work sample (25 most-cited, 25 newest) are NOT already in the corpus.
    A high "new" share means the keyword reaches papers the seed's citations miss.
 
 Usage: lineage keywords DATA_DIR "CONTEXT" [TOP_N] [MIN_ANC] [FOCUS_REGEX]
   e.g. lineage keywords data '"machine learning" OR "neural network"' 15 5 'long-range|electrostat|charge'
+       lineage keywords data '"randomized" OR "cohort"' 15 5 'statin|lipid'
 FOCUS_REGEX (optional) keeps only tags that are concentrated in on-topic titles.
 """
 import json
@@ -21,17 +22,13 @@ from .openalex import get, short, top_mixed
 from .query_test import text_of
 from .topic import core_set, in_field
 
-GENERIC = {
-    "machine learning interatomic potentials", "machine learning", "neural network potentials",
-    "molecular dynamics", "density functional theory", "potential energy surface", "deep learning",
-    "machine learning potentials", "interatomic potentials", "atomistic simulation", "atomistic simulations",
-    "machine learning force fields", "force fields", "neural networks", "neural network", "first-principles",
-    "ab initio", "molecular dynamics simulations", "graph neural networks", "materials science",
-    "computational chemistry", "machine-learned interatomic potentials", "interatomic potential",
-    "machine learning interatomic potential", "computational efficiency", "high-throughput screening",
-    "electronic structure", "quantum chemistry", "transferability", "equivariance", "data efficiency",
-    "deep neural network", "deep neural networks", "convolutional neural network", "artificial intelligence",
-}
+# A tag carried by this share of the field's documents describes the whole field, not a branch, so searching it
+# cannot widen the corpus. Measured on the data, not listed by hand, so it works for any field.
+GENERIC_SHARE = 0.3
+
+
+def generic_tags(df: Counter, n_docs: int, share: float = GENERIC_SHARE) -> set:
+    return {t for t, n in df.items() if n_docs and n / n_docs >= share}
 
 
 def fetch_keywords(ids):
@@ -64,6 +61,10 @@ def main(argv=None):
     df = Counter()
     for ws in kw.values():
         df.update(set(ws))
+    generic = generic_tags(df, len(kw))
+    if generic:
+        print(f"field-wide tags left out (on >= {GENERIC_SHARE:.0%} of {len(kw)} documents): "
+              + ", ".join(sorted(generic, key=lambda t: -df[t])[:10]))
     if focus:
         # keep tags concentrated in on-topic documents (title matches FOCUS regex)
         titles = {k: (corpus.get(k) or meta.get(k) or {}).get("title") or "" for k in kw}
@@ -71,11 +72,11 @@ def main(argv=None):
         df_rel = Counter()
         for k in rel:
             df_rel.update(set(kw[k]))
-        scored = [(p, df_rel[p]) for p in df if p not in GENERIC and df_rel[p] >= 3
+        scored = [(p, df_rel[p]) for p in df if p not in generic and df_rel[p] >= 3
                   and df_rel[p] / df[p] >= 0.5]
         cands = sorted(scored, key=lambda x: (-x[1], x[0]))[:top_n]
     else:
-        cands = [(p, n) for p, n in df.most_common() if p not in GENERIC and n >= 3][:top_n]
+        cands = [(p, n) for p, n in df.most_common() if p not in generic and n >= 3][:top_n]
 
     have = set(corpus) | set(meta)  # "new" = neither in the corpus nor cited by it
     res = []

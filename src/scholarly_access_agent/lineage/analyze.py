@@ -115,7 +115,7 @@ def title_words(t: str) -> set:
 
 def cluster_words(members, df_all: Counter, n_all: int, titles: dict, n=10) -> list:
     """Words over-represented in the cluster (p_c * log(p_c / p_field)); words in half the field's titles
-    (the field's own name, e.g. 'kinetic monte carlo') say nothing about a branch and are left out."""
+    (typically the words of the field's own name) say nothing about a branch and are left out."""
     df = Counter()
     for k in members:
         df.update(titles[k])
