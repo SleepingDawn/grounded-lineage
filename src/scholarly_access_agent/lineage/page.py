@@ -22,12 +22,15 @@ BREAK_GAP = 8  # insert a "(시간 생략)" break when consecutive node years di
 KIND_KO = {"journal": "저널", "proceedings": "학회 논문집", "preprint": "프리프린트", "unknown": "OpenAlex"}
 LEVEL_KO = {"fulltext": "본문 확인", "excerpts": "발췌 확인", "secondary": "인용 맥락만", "abstract": "초록만 확인",
             "metadata": "미확인"}  # same labels as snu-library-scholarly-access
-EDGE_TYPES = {"s", "d", "m", "e"}  # e = evaluates: study -> the real-world event it evaluates
+EDGE_TYPES = {"s", "d", "m", "e", "x"}  # e = evaluates: study -> event; x = disputes/contradicts (study <-> study)
+EDGE_BASIS = ("cites", "method", "data", "authors", "conceptual")  # why "X built on Y" (edge objects only)
+CONTESTED_STATUS = {"open": "미해결", "resolved": "해소", "partly": "부분 해소"}
 MODES = ("lineage", "topic")
 # Study design (optional node field): topic mode colours boxes by it; lineage mode only when present.
 DESIGN_KO = {"model": "모형·이론", "observational": "관찰자료", "experiment": "실험(무작위)",
              "quasi": "준실험(DiD·합성대조)", "review": "리뷰"}
-EDGE_KO = {"s": "직접 확장·변형", "d": "개념적 연결", "m": "인용 네트워크 주경로 (SPC)", "e": "사건 평가 (연구 → 사건)"}
+EDGE_KO = {"s": "직접 확장·변형", "d": "개념적 연결", "m": "인용 네트워크 주경로 (SPC)", "e": "사건 평가 (연구 → 사건)",
+           "x": "반박·상충 (≠)"}
 # Topic mode: question lanes are wider (their header is a question), the events band is narrower.
 Q_LANE_W, EV_LANE_W, X0_TOPIC, PILL_H = 156, 112, 64, 24
 PILL_W = EV_LANE_W - 14
@@ -37,6 +40,27 @@ MAX_QUESTIONS = 5
 
 def md(t):
     return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escape(t or ""))
+
+
+def edge_parts(e):
+    """(source, target, type) of an edge given as ["a", "b", "s"] or {"from", "to", "type", "basis", "evidence"}."""
+    if isinstance(e, dict):
+        return e.get("from"), e.get("to"), e.get("type")
+    return tuple(e) if isinstance(e, (list, tuple)) and len(e) == 3 else (None, None, None)
+
+
+def edge_list(L):
+    """All edges as (source, target, type) tuples, whichever form lineage.json uses."""
+    return [edge_parts(e) for e in L.get("edges", [])]
+
+
+def edge_meta(e):
+    """{'basis': ..., 'evidence': ...} recorded on an edge object ({} for the array form)."""
+    return {k: e[k] for k in ("basis", "evidence") if isinstance(e, dict) and e.get(k)}
+
+
+def has_disputes(L):
+    return any(t == "x" for _, _, t in edge_list(L)) or bool(L.get("contested"))
 
 
 def load(p, default=None):
@@ -120,15 +144,37 @@ def validate(L):
     if len(L["nodes"]) > 50:
         errs.append(f"{len(L['nodes'])} nodes; keep the tree at 20-40 (hard limit 50)")
     by_id = {n.get("id"): n for n in L["nodes"]}
-    for e in L["edges"]:
-        if len(e) != 3 or e[0] not in ids or e[1] not in ids or e[2] not in EDGE_TYPES:
-            errs.append(f"bad edge {e}: needs [source_id, target_id, one of s/d/m/e]")
+    for raw in L["edges"]:
+        s, t, st = edge_parts(raw)
+        e = [s, t, st] if isinstance(raw, dict) else raw
+        if s not in ids or t not in ids or st not in EDGE_TYPES:
+            errs.append(f"bad edge {e}: needs [source_id, target_id, one of s/d/m/e/x] "
+                        "or {\"from\", \"to\", \"type\", \"basis\", \"evidence\"}")
             continue
-        s_ev, t_ev = is_event(by_id[e[0]]), is_event(by_id[e[1]])
-        if e[2] == "e" and (s_ev or not t_ev):
+        if isinstance(raw, dict):
+            if raw.get("basis") is not None and raw["basis"] not in EDGE_BASIS:
+                errs.append(f"edge {s}->{t}: basis '{raw['basis']}' must be one of {list(EDGE_BASIS)}")
+            if raw.get("evidence") is not None and not isinstance(raw["evidence"], str):
+                errs.append(f"edge {s}->{t}: evidence must be a locator string ('Liang 2023 §II.B' or 'liang2023:p3')")
+        s_ev, t_ev = is_event(by_id[s]), is_event(by_id[t])
+        if st == "e" and (s_ev or not t_ev):
             errs.append(f"bad edge {e}: an 'e' (evaluates) edge runs from a study node to the event node it evaluates")
-        elif e[2] != "e" and (s_ev or t_ev):
+        elif st != "e" and (s_ev or t_ev):
             errs.append(f"bad edge {e}: event nodes connect only through 'e' edges (study -> event)")
+    for k, c in enumerate(L.get("contested") or []):
+        if not isinstance(c, dict) or not c.get("claim"):
+            errs.append(f"contested[{k}]: needs 'claim'")
+            continue
+        for side in ("side_a", "side_b"):
+            sd = c.get(side)
+            if not isinstance(sd, dict) or not sd.get("nodes"):
+                errs.append(f"contested[{k}] ({c['claim'][:30]}): '{side}' needs 'nodes' (node ids) and 'says'")
+                continue
+            bad = [x for x in sd["nodes"] if x not in ids]
+            if bad:
+                errs.append(f"contested[{k}] ({c['claim'][:30]}): {side} names unknown node(s) {bad}")
+        if c.get("status", "open") not in CONTESTED_STATUS:
+            errs.append(f"contested[{k}] ({c['claim'][:30]}): status must be one of {list(CONTESTED_STATUS)}")
     for r in L.get("rows", []):
         if r.get("level") not in LEVEL_KO:
             errs.append(f"row '{r.get('work')}': level must be one of {list(LEVEL_KO)}")
@@ -210,8 +256,8 @@ def warnings(L):
     if len(L["nodes"]) > 40:
         w.append(f"{len(L['nodes'])} nodes (> 40): consider dropping minor ones")
     years = {n["id"]: n["year"] for n in L["nodes"]}
-    for s, t, st in L["edges"]:
-        if st == "e":  # a study evaluates an earlier event: backward by design
+    for s, t, st in edge_list(L):
+        if st in ("e", "x"):  # a study evaluates an earlier event; a dispute has no direction
             continue
         ys, yt = years[s], years[t]
         if ys > yt:
@@ -341,7 +387,7 @@ def edge_geometry(L, pos):
     topic = mode(L) == "topic"
     by = {n["id"]: n for n in L["nodes"]}
     out = []
-    for s, t, st in L["edges"]:
+    for s, t, st in edge_list(L):
         if s not in pos or t not in pos:
             continue
         hs, ht = (PILL_W / 2 if is_event(by[x]) else BOX_W / 2 for x in (s, t))
@@ -352,6 +398,31 @@ def edge_geometry(L, pos):
                        for n in L["nodes"])
         out.append((s, t, st, edge_curve(pos, s, t, hs, ht, horizontal=st == "e", side=side)))
     return out
+
+
+X_DASH = "7 2 1.5 2"  # dispute line: long-short dash rhythm, unlike d (4 4) and e (1.5 3.5), so not colour alone
+DISPUTE_CSS = """
+:root{--dispute:#b42318}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--dispute:#ff7b6b}}
+:root[data-theme="dark"]{--dispute:#ff7b6b}
+svg .e.dis{stroke:var(--dispute);stroke-width:1.6;stroke-dasharray:7 2 1.5 2}
+svg .e.xm{fill:none;stroke:none}
+svg .xmk{fill:var(--surface);stroke:var(--dispute);stroke-width:1.3}
+svg .xmk-t{fill:var(--dispute);stroke:none;font-family:var(--f-body);font-weight:700;text-anchor:middle;dominant-baseline:central}
+"""
+
+
+def bezier(p0, c1, c2, p3, u):
+    """Point at parameter u on the cubic Bézier (p0, c1, c2, p3)."""
+    a, b, c, e = (1 - u) ** 3, 3 * (1 - u) ** 2 * u, 3 * (1 - u) * u ** 2, u ** 3
+    return (round(a * p0[0] + b * c1[0] + c * c2[0] + e * p3[0], 1),
+            round(a * p0[1] + b * c1[1] + c * c2[1] + e * p3[1], 1))
+
+
+def xmark(cx, cy, r):
+    """The marker of a dispute edge: a ringed '≠' (a shape, so it does not rely on colour)."""
+    return (f'<circle cx="{cx}" cy="{cy}" r="{r}" class="xmk"/>'
+            f'<text x="{cx}" y="{cy}" class="xmk-t" style="font-size:{r * 1.6:.0f}px">≠</text>')
 
 
 def edges_through_boxes(L, samples=40, margin=3):
@@ -381,12 +452,16 @@ def svg_legend(L, W, y0):
     topic = mode(L) == "topic"
     used = {n.get("design") for n in L["nodes"]}
     items = [("head", "연구 설계")] + [("design", d) for d in DESIGN_KO if topic or d in used]
+    if not topic and not used - {None}:
+        items = []  # lineage mode without designs: the legend only explains the dispute line
     if topic:
-        types = [t for t in ("s", "d", "m", "e") if any(e[2] == t for e in L["edges"])]
+        types = [t for t in ("s", "d", "m", "e", "x") if any(e[2] == t for e in edge_list(L))]
         if types:
             items += [("head", "연결선")] + [("edge", t) for t in types]
         if any(ln.get("answer") for ln in L["lanes"] if not is_events_lane(ln)):
             items += [("answer", "")]
+    elif any(t == "x" for _, _, t in edge_list(L)):
+        items += [("head", "연결선"), ("edge", "x")]
     o, x, y = [], 10, y0 + 20
     for kind, key in items:
         label = {"head": key, "design": DESIGN_KO.get(key, ""), "edge": EDGE_KO.get(key, ""),
@@ -404,10 +479,13 @@ def svg_legend(L, W, y0):
                      f'style="fill:color-mix(in srgb, var(--d-{key}) 12%, var(--surface));stroke:var(--d-{key})" stroke-width="1.3"/>')
         elif kind == "edge":
             st = {"s": "stroke:var(--edge)", "d": "stroke:var(--edge)", "m": "stroke:var(--accent)",
-                  "e": "stroke:var(--muted)"}[key]
-            dash = {"d": ' stroke-dasharray="4 4"', "e": ' stroke-dasharray="1.5 3.5"'}.get(key, "")
+                  "e": "stroke:var(--muted)", "x": "stroke:var(--dispute)"}[key]
+            dash = {"d": ' stroke-dasharray="4 4"', "e": ' stroke-dasharray="1.5 3.5"',
+                    "x": f' stroke-dasharray="{X_DASH}"'}.get(key, "")
             o.append(f'<line x1="{x}" x2="{x+22}" y1="{y-4}" y2="{y-4}" style="{st}" '
-                     f'stroke-width="{2.4 if key == "m" else 1.4}"{dash}/>')
+                     f'stroke-width="{2.4 if key == "m" else 1.6 if key == "x" else 1.4}"{dash}/>')
+            if key == "x":
+                o.append(xmark(x + 11, y - 4, 5))
         else:
             o.append(f'<rect x="{x}" y="{y-11}" width="22" height="14" rx="4" class="ansbox"/>')
         o.append(f'<text x="{x+30}" y="{y}" class="lg">{escape(label)}</text>')
@@ -422,9 +500,9 @@ def svg(L, links):
     pos, rows, H = layout(L, geo)
     W = geo.width
     legend, lh = ([], 0)
-    if topic or any(n.get("design") for n in nodes):
+    if topic or any(n.get("design") for n in nodes) or any(t == "x" for _, _, t in edge_list(L)):
         legend, lh = svg_legend(L, W, H)
-    has_e = any(e[2] == "e" for e in L["edges"])
+    has_e = any(e[2] == "e" for e in edge_list(L))
     aria = ("질문 지도: 열은 독자의 질문, 맨 왼쪽 띠는 정책·사건, 행은 연도. 상자를 누르면 원문이 열립니다" if topic
             else "계보도: 열은 계열, 행은 연도. 상자를 누르면 원문이 열립니다")
     o = [f'<svg id="tree" viewBox="0 0 {W} {H + lh}" width="{W}" height="{H + lh}" role="group" '
@@ -475,6 +553,11 @@ def svg(L, links):
         o.append(f'<line x1="4" x2="{W-4}" y1="{y}" y2="{y}" class="sep"/><text x="8" y="{y+28}" class="yr">{yr}</text>')
     for s, t, st, (p0, c1, c2, p3) in edge_geometry(L, pos):
         d = f"M{p0[0]},{p0[1]} C{c1[0]},{c1[1]} {c2[0]},{c2[1]} {p3[0]},{p3[1]}"
+        if st == "x":  # dispute: no direction, so no arrowhead; a ringed ≠ sits at the curve's midpoint
+            mx, my = bezier(p0, c1, c2, p3, 0.5)
+            o.append(f'<path d="{d}" class="e dis" data-s="{s}" data-t="{t}"/>')
+            o.append(f'<g class="e xm" data-s="{s}" data-t="{t}">{xmark(mx, my, 7)}</g>')
+            continue
         cls = {"s": "e", "d": "e dash", "m": "e main", "e": "e ev"}[st]
         marker = {"m": "arm", "e": "are"}.get(st, "ar")
         o.append(f'<path d="{d}" class="{cls}" data-s="{s}" data-t="{t}" marker-end="url(#{marker})"/>')
@@ -595,6 +678,64 @@ def stage_table(L):
                     f'<td>{escape(reps)}</td><td>{md(ln.get("limit", "")) or "–"}</td></tr>')
     return ('<div class="scroll"><table><thead><tr><th>계열</th><th>시기</th><th>방식</th><th>대표 연구</th>'
             '<th>핵심 한계</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table></div>")
+
+
+LEVEL_ORDER = ("fulltext", "excerpts", "secondary", "abstract", "metadata")  # strongest first
+
+
+def node_levels(L):
+    """{node id: [row levels]}: a row belongs to a node when it names the same OpenAlex ID or url
+    (or the node id in an optional row field 'node')."""
+    out = defaultdict(list)
+    for n in L.get("nodes", []):
+        for r in L.get("rows", []):
+            if (r.get("node") == n.get("id") or (n.get("openalex") and r.get("openalex") == n["openalex"])
+                    or (n.get("url") and r.get("url") == n["url"])):
+                out[n["id"]].append(r.get("level"))
+    return out
+
+
+def best_level(levels):
+    """Strongest evidence level among a node's rows, or None when the node has no row."""
+    ranked = [lv for lv in LEVEL_ORDER if lv in (levels or [])]
+    return ranked[0] if ranked else None
+
+
+def side_levels(L, side, levels=None):
+    """[(node id, best level or None)] for one side of a contested claim."""
+    levels = node_levels(L) if levels is None else levels
+    return [(nid, best_level(levels.get(nid))) for nid in (side or {}).get("nodes", [])]
+
+
+def side_level_text(L, side, levels=None):
+    """'본문 확인' when every node of the side was read in full, else the weakest level per node."""
+    pairs = side_levels(L, side, levels)
+    if pairs and all(lv == "fulltext" for _, lv in pairs):
+        return LEVEL_KO["fulltext"]
+    by = {n["id"]: n for n in L["nodes"]}
+    return ", ".join(f'{by[nid].get("sub") or nid}: {LEVEL_KO.get(lv, "표 없음")}' for nid, lv in pairs)
+
+
+def contested_rows(L):
+    """Rows of the 쟁점 table: (claim, A, B, measurement note, status, evidence level), as plain text."""
+    by = {n["id"]: n for n in L["nodes"]}
+    levels = node_levels(L)
+    out = []
+    for c in L.get("contested") or []:
+        def side(sd):
+            who = ", ".join(study_ref(by[x]) if x in by and by[x].get("sub") else x for x in sd.get("nodes", []))
+            return f'{sd.get("says", "")} ({who})' if sd.get("says") else who
+        lv = f'A: {side_level_text(L, c["side_a"], levels)} / B: {side_level_text(L, c["side_b"], levels)}'
+        out.append((c["claim"], side(c["side_a"]), side(c["side_b"]), c.get("metric_note", ""),
+                    CONTESTED_STATUS.get(c.get("status", "open"), ""), lv))
+    return out
+
+
+def contested_html(L):
+    rows = "".join(f'<tr><td class="w">{md(a)}</td><td>{md(b)}</td><td>{md(c)}</td><td>{md(d) or "–"}</td>'
+                   f'<td>{escape(e)}</td><td class="ev">{escape(f)}</td></tr>' for a, b, c, d, e, f in contested_rows(L))
+    return ('<div class="scroll"><table><thead><tr><th>쟁점</th><th>A</th><th>B</th><th>측정 차이</th><th>상태</th>'
+            '<th>근거 수준</th></tr></thead><tbody>' + rows + "</tbody></table></div>")
 
 
 def study_ref(n):
@@ -735,6 +876,38 @@ def vocabulary(L):
 
 
 def search_log(data):
+    return query_log(data) + outside_searches(data)
+
+
+def outside_searches(data):
+    """Searches run outside OpenAlex (lineage log-search): engine, query, date, hits, kept."""
+    log = load(data / "searches.json", [])
+    if not log:
+        return ""
+    rows = "".join(f'<tr><td class="y">{escape(e.get("date", ""))}</td><td class="w">{escape(e.get("engine", ""))}</td>'
+                   f'<td><code class="q">{escape(e.get("query", ""))}</code>'
+                   + (f'<span class="src">{escape(e["note"])}</span>' if e.get("note") else "")
+                   + f'</td><td class="num">{e.get("hits", 0):,}</td>'
+                   f'<td>{escape(", ".join(e.get("kept", [])) or "없음")}</td></tr>' for e in log)
+    return ('<div class="col"><h3>OpenAlex 밖 검색 기록</h3></div><div class="scroll"><table class="kw"><thead><tr><th>날짜</th>'
+            '<th>검색원</th><th>검색식</th><th>결과</th><th>남긴 것</th></tr></thead><tbody>' + rows + "</tbody></table></div>")
+
+
+def gold_note(log, data):
+    """Where the recall gold set came from, as logged by query-test (independent gold.json or the curated lineage)."""
+    src = {e.get("gold_source") for e in log if e.get("gold")}
+    g = load(data / "gold.json")
+    if src == {"independent"} and g:
+        src_txt = g.get("note") or g.get("source")
+        origin = f", {escape(src_txt)}" if src_txt else ""
+        return f"정답 세트는 이 계보와 독립적으로 고정한 목록(gold.json, {len(g.get('ids', []))}편{origin})입니다."
+    return ("정답 세트는 계보도·표의 논문이며, 고전 선행 연구처럼 검색이 아니라 인용으로 들어오는 논문도 포함됩니다."
+            + (" 계보에서 뽑은 정답 세트라 재현율은 순환적입니다." if "lineage" in src else ""))
+
+
+def query_log(data):
+    from .searchlog import saturation, unsaturated_ko
+
     log = load(data / "queries.json", [])
     if not log:
         return ""
@@ -750,7 +923,10 @@ def search_log(data):
     union = set()
     for e in log:
         union |= set(e.get("gold_found_ids", []))
-    cum = f'<p class="note">검색 전략 전체(모든 검색식의 합)의 재현율: <b>{len(union)}/{gold}</b>. 정답 세트는 계보도·표의 논문이며, 고전 선행 연구처럼 검색이 아니라 인용으로 들어오는 논문도 포함됩니다.</p>' if gold else ""
+    cum = f'<p class="note">검색 전략 전체(모든 검색식의 합)의 재현율: <b>{len(union)}/{gold}</b>. {gold_note(log, data)}</p>' if gold else ""
+    state = saturation(data)
+    if state and not state["saturated"]:
+        cum += f'<p class="note"><b>{escape(unsaturated_ko(state))}</b></p>'
     return ('<h3>검색 기록</h3><div class="scroll"><table class="kw"><thead><tr><th>날짜</th><th>검색식</th><th>일치</th>'
             '<th>정밀도 (분야 적합)</th><th>재현율 (정답 세트)</th><th>새 분야 논문</th></tr></thead><tbody>'
             + "\n".join(rows) + "</tbody></table></div>" + cum)
@@ -793,6 +969,22 @@ def lane_buttons(L):
     return "".join(b)
 
 
+def legend_x(L):
+    """HTML legend item for dispute edges, only when the tree has one."""
+    if not any(t == "x" for _, _, t in edge_list(L)):
+        return ""
+    return (f'<span><svg width="34" height="14" aria-hidden="true"><line x1="1" x2="33" y1="7" y2="7" '
+            f'style="stroke:var(--dispute)" stroke-width="1.6" stroke-dasharray="{X_DASH}"/>{xmark(17, 7, 5)}</svg>'
+            f'{EDGE_KO["x"]}</span>')
+
+
+def contested_section(L):
+    if not L.get("contested"):
+        return ""
+    return ('<section><div class="col"><h2>쟁점</h2><p>같은 질문에 서로 다른 답을 낸 연구들입니다. 근거 수준이 "본문 확인"이 '
+            f'아닌 쪽은 초록이나 인용 맥락만으로 판단한 것입니다.</p></div>{contested_html(L)}</section>\n')
+
+
 def legend_line(style):
     dash = ' stroke-dasharray="4 4"' if style == "d" else ""
     col = "var(--accent)" if style == "m" else "var(--edge)"
@@ -805,9 +997,11 @@ ASSETS = Path(__file__).with_name("assets")
 
 def assets(L, links):
     css = (ASSETS / "page.css").read_text(encoding="utf-8")
+    if has_disputes(L):
+        css += DISPUTE_CSS
     js = (ASSETS / "page.js").read_text(encoding="utf-8")
     js = (js.replace("__NODES__", json.dumps(node_data(L, links), ensure_ascii=False))
-            .replace("__EDGES__", json.dumps([[s, t] for s, t, _ in L["edges"]]))
+            .replace("__EDGES__", json.dumps([[s, t] for s, t, _ in edge_list(L)]))
             .replace("__LANES__", json.dumps([lane_name(l) for l in L["lanes"]], ensure_ascii=False))
             .replace("__KIND__", json.dumps(KIND_KO, ensure_ascii=False))).replace("</", "<\\/")
     return css, js
@@ -839,13 +1033,13 @@ def page(L, work, data, xdata, links):
   <p>열은 계열, 행은 연도입니다(연도 간격은 등간격이 아님). 상자에 마우스를 올리면 그 논문의 조상과 후손 줄기만 남고 요약이 뜹니다. <b>상자를 누르면 원문이 새 탭에서 열립니다.</b> 저널판이 있으면 저널판으로, 없으면 프리프린트로 연결됩니다.</p></div>
   <div class="controls" role="group" aria-label="계열 강조"><span class="lab">계열 강조</span>{lane_buttons(L)}</div>
   <div class="stage" id="stage"><div class="scroll">{svg(L, links)}</div><div class="tip" id="tip" hidden></div></div>
-  <div class="legend"><span>{legend_line("s")}직접 확장·변형</span><span>{legend_line("d")}개념적 연결</span><span>{legend_line("m")}인용 네트워크 주경로 (SPC)</span>
+  <div class="legend"><span>{legend_line("s")}직접 확장·변형</span><span>{legend_line("d")}개념적 연결</span><span>{legend_line("m")}인용 네트워크 주경로 (SPC)</span>{legend_x(L)}
   <span><svg width="26" height="14" aria-hidden="true"><rect x="1" y="1" width="24" height="12" rx="3" style="fill:none;stroke:var(--muted)" stroke-dasharray="4 2"/></svg>저널판 없음 (프리프린트 {n_pre}편)</span></div>
 </section>
 <section class="col"><h2>갈라진 지점</h2>{axes(L)}</section>
 <section><div class="col"><h2>단계별 흐름</h2></div>{stage_table(L)}</section>
 <section><div class="col"><h2>지금의 주류와 최전선</h2></div>{verdict(L)}<div class="col">{("<h3>주요 흐름</h3>" + trends_html(L)) if (L.get("trends") or L.get("one_line")) else ""}</div></section>
-<section class="col"><h2>데이터로 본 근거</h2>{evidence(L, data)}</section>
+{contested_section(L)}<section class="col"><h2>데이터로 본 근거</h2>{evidence(L, data)}</section>
 <section><div class="col"><h2>계보 표</h2><p>연구 이름을 누르면 원문이 열립니다. "본문 확인"은 원문의 해당 절이나 페이지를 직접 읽은 항목입니다.</p></div>{table(L, links)}</section>
 <section>
   <div class="col"><h2>깊이 넓히기</h2>
@@ -892,6 +1086,8 @@ def topic_page(L, work, data, xdata, links):
 </section>""", f'<section><div class="col"><h2>질문별 지금의 답</h2></div>{question_table(L, links)}</section>']
     if L.get("axes"):
         sec.append(f'<section class="col"><h2>답이 갈리는 지점</h2>{axes(L)}</section>')
+    if L.get("contested"):
+        sec.append(contested_section(L))
     if L.get("verdict") or L.get("trends") or L.get("one_line"):
         trends = ("<h3>주요 흐름</h3>" + trends_html(L)) if (L.get("trends") or L.get("one_line")) else ""
         sec.append(f'<section><div class="col"><h2>지금의 결론</h2></div>'
@@ -901,7 +1097,7 @@ def topic_page(L, work, data, xdata, links):
     if L.get("rows"):
         sec.append('<section><div class="col"><h2>근거 표</h2><p>연구 이름을 누르면 원문이 열립니다. "본문 확인"은 원문의 해당 절이나 '
                    f'페이지를 직접 읽은 항목입니다.</p></div>{table(L, links)}</section>')
-    if L.get("vocabulary") or (data / "queries.json").exists():
+    if L.get("vocabulary") or (data / "queries.json").exists() or (data / "searches.json").exists():
         sec.append(f'<section><div class="col"><h2>검색 범위</h2>{vocabulary(L)}</div>{search_log(data)}</section>')
     sec.append(f"""<section class="col">
   <h2>이 분석의 한계</h2><ul>{limits}</ul>

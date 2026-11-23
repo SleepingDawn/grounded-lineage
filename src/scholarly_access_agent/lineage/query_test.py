@@ -8,11 +8,16 @@ Reports for one query:
               flagged when OpenAlex has no abstract for them (title-only match is then the limit)
   novelty     on-topic papers in the top N that are not yet in the corpus or its references
   saturated   novelty < 10% of the on-topic top N: this query adds little; stop varying it
-Each run is appended to DATA_DIR/queries.json (the search log shown on the page).
+Each run is appended to DATA_DIR/queries.json (the search log shown on the page), with the gold source.
+Gold: --gold IDs, --gold-file (independent, e.g. frozen with `lineage gold freeze`; DATA_DIR/gold.json is used by
+default when no other gold is given: "gold: independent (N)"), or --gold-from-lineage (circular: the agent chose
+those papers; "gold: from curated lineage (circular)"). After the run, if no logged query is SATURATED, an
+"UNSATURATED: ..." line says so.
 
 Usage:
   lineage query-test DATA_DIR 'QUERY' --focus 'regex' --gold-from-lineage lineage.json [--top 100] [--list 15]
   lineage query-test DATA_DIR 'QUERY' --gold W123,W456
+  lineage query-test DATA_DIR 'QUERY' --gold-file gold.json   (independent gold; DATA_DIR/gold.json is the default)
   lineage query-test DATA_DIR 'Q1' 'Q2' 'Q3' --label q1 --label q2 --label q3 --gold-from-lineage lineage.json
     Batch: the queries are fetched in parallel (shared rate limit), then reported and logged in
     the given order, so strategy recall accumulates as if they had been run one by one. A
@@ -29,7 +34,9 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from .gold import load_ids as load_gold
 from .openalex import check_query, get, search as oa_search, short
+from .searchlog import saturation, unsaturated_line
 from .topic import core_set, in_field
 
 SELECT = "id,title,publication_year,cited_by_count,abstract_inverted_index,referenced_works"
@@ -46,13 +53,24 @@ def search(q, n):
 
 
 def gold_ids(a):
+    """(gold IDs, source): source is 'given' (--gold), 'independent' (--gold-file or DATA_DIR/gold.json),
+    'lineage' (--gold-from-lineage: circular) or '' (no gold)."""
     if a.gold:
-        return [short(x.strip()) for x in a.gold.split(",") if x.strip()]
+        return [short(x.strip()) for x in a.gold.split(",") if x.strip()], "given"
+    if a.gold_file:
+        return load_gold(Path(a.gold_file)), "independent"
     if a.gold_from_lineage:
         L = json.loads(Path(a.gold_from_lineage).read_text(encoding="utf-8"))
         ids = [n.get("openalex") for n in L.get("nodes", [])] + [r.get("openalex") for r in L.get("rows", [])]
-        return list(dict.fromkeys(i for i in ids if i))
-    return []
+        return list(dict.fromkeys(i for i in ids if i)), "lineage"
+    frozen = Path(a.data_dir) / "gold.json"
+    if frozen.exists():
+        return load_gold(frozen), "independent"
+    return [], ""
+
+
+GOLD_LINE = {"independent": "gold: independent ({n})", "lineage": "gold: from curated lineage (circular) ({n})",
+             "given": "gold: given list ({n})"}
 
 
 def recall(q, gold):
@@ -86,7 +104,11 @@ def main(argv=None):
                     help="one or more queries; several are fetched in parallel and logged in order")
     ap.add_argument("--focus", default="")
     ap.add_argument("--gold", default="")
-    ap.add_argument("--gold-from-lineage", default="")
+    ap.add_argument("--gold-from-lineage", default="",
+                    help="gold = the curated lineage's papers (circular: the agent chose them)")
+    ap.add_argument("--gold-file", default="",
+                    help="independent gold: a gold.json from `lineage gold freeze` or a file of OpenAlex IDs; "
+                         "default DATA_DIR/gold.json when it exists and no other gold is given")
     ap.add_argument("--top", type=int, default=100)
     ap.add_argument("--list", type=int, default=15)
     ap.add_argument("--label", action="append", default=[],
@@ -98,7 +120,9 @@ def main(argv=None):
     for q in a.query:
         check_query(q)  # reject every malformed query before any network call
     d = Path(a.data_dir)
-    gold = gold_ids(a)
+    gold, a.gold_source = gold_ids(a)
+    if gold:
+        print(GOLD_LINE[a.gold_source].format(n=len(gold)))
     if len(a.query) == 1:
         results = [fetch(a.query[0], a.top, gold)]
     else:
@@ -116,6 +140,10 @@ def main(argv=None):
         for s in summary:
             print(f"{s['label'][:28]:28s} {s['hits']:>8,} {s['precision']:>5.0%} "
                   f"{s['recall']:>7s} {s['novelty']:>6.0%}  {s['strategy']}{'  SATURATED' if s['saturated'] else ''}")
+    state = saturation(d)
+    if state and not state["saturated"]:
+        print(f"{unsaturated_line(state)}; none of the {state['n']} logged queries in {d / 'queries.json'} "
+              "is SATURATED, so the search has not converged: vary the vocabulary or report it as unsaturated")
 
 
 def report_one(d, a, query, label, gold, r, found, missed):
@@ -163,7 +191,8 @@ def report_one(d, a, query, label, gold, r, found, missed):
         print(f"strategy recall (all logged queries + this one): {strategy}")
     log.append({"date": datetime.date.today().isoformat(), "label": label, "query": query,
                 "hits": total, "top": len(top), "on_topic": len(on), "precision": round(precision, 3),
-                "gold": len(gold), "gold_found": len(found), "gold_found_ids": sorted(found),
+                "gold": len(gold), "gold_source": getattr(a, "gold_source", "") if gold else "",
+                "gold_found": len(found), "gold_found_ids": sorted(found),
                 "new_on_topic": len(new_on),
                 "novelty": round(novelty, 3), "saturated": bool(on) and novelty < 0.10,
                 "new_examples": [{"id": short(w["id"]), "year": w.get("publication_year"),

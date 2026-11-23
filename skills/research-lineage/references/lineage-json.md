@@ -34,8 +34,20 @@ Text fields accept `**bold**`; everything else is escaped. Full examples: `examp
      "note": "one line: what it changed",    // shown in the tooltip
      "key": true}                             // optional: the seed or the focus paper
   ],
-  "edges": [ ["cent", "g4", "s"] ],          // earlier -> later; s = builds on, d = conceptual, m = main-path order;
-                                             // e = evaluates: study -> the event node it evaluates (topic mode)
+  "edges": [ ["cent", "g4", "s"],           // earlier -> later; s = builds on, d = conceptual, m = main-path order;
+                                             // e = evaluates: study -> the event node it evaluates (topic mode);
+                                             // x = disputes / contradicts (study <-> study, no direction)
+    {"from": "g4", "to": "les", "type": "s",  // object form (any type): records WHY "les built on g4"
+     "basis": "method",                       // cites | method | data | authors | conceptual
+     "evidence": "Cheng 2025 §II.B"},        // locator: section/page, or an evidence key "cheng2025:p3"
+    ["camp_a", "camp_b", "x"] ],
+  "contested": [                              // optional: claims the field disagrees on (shown as a 쟁점 table)
+    {"claim": "propagon 기여 비율",
+     "side_a": {"nodes": ["larkin14"], "says": "~6%, MFP ~10 nm에서 포화"},
+     "side_b": {"nodes": ["fiorentino24"], "says": "무시할 만큼 작음"},
+     "metric_note": "MFP 정의와 cutoff가 다름",  // why the numbers differ (measurement, definition, system)
+     "status": "open"}                         // open | resolved | partly
+  ],
   "link_overrides": {"W4323721113": {"url": "https://proceedings.mlr.press/…", "kind": "proceedings", "venue": "ICML 2023"}},
   "axes": [                                   // the questions that split the field
     {"question": "① 전하를 어디서 얻는가",
@@ -74,6 +86,13 @@ Text fields accept `**bold**`; everything else is escaped. Full examples: `examp
 
 Evidence labels on the page and in the report chapter follow snu-library-scholarly-access: `fulltext` = **본문 확인**, `excerpts` = **발췌 확인**, `secondary` = **인용 맥락만** (known only from a citing paper), `abstract` = **초록만 확인**, `metadata` = **미확인**.
 
+## Edges with a basis, disputes and contested claims
+
+- **Edge objects.** Any edge may be an object `{"from", "to", "type", "basis", "evidence"}` instead of the array; both forms can be mixed and render the same. Give every `s` edge a `basis` and an `evidence` locator: `cites` (the later paper cites the earlier one and says it builds on it), `method`, `data`, `authors` (same group continues the line), `conceptual`. An `s` edge with no basis beyond "it seemed to follow" belongs in `d`.
+- **x edges** (disputes/contradicts) join two studies that give conflicting answers. They are drawn as a red-toned dash-dot line with no arrowhead and a ringed **≠** at the midpoint; the pattern and marker, not the colour alone, set them apart. The legend inside the figure lists them; they never get a "backward in time" warning.
+- **contested** lists the disputes as claims with two sides (`nodes` = node ids, `says` = that side's answer), `metric_note` (why the numbers can differ) and `status`. The page and the report chapter show a **쟁점** table: claim | A | B | 측정 차이 | 상태 | 근거 수준. A side's evidence level comes from the `rows` of its nodes (a row belongs to a node when it has the same `openalex` or `url`, or `"node": "<id>"`).
+- Files without these fields render exactly as before. Topic mode accepts them the same way (the 쟁점 section follows 답이 갈리는 지점).
+
 ## Topic mode
 
 For a topic question ("도시 대중교통 정기권은 효과가 있나") the lanes are the **reader's questions**, not the agent's themes. Set `"meta": {"mode": "topic"}`. Everything above still applies; seed, corpus and widening fields are optional.
@@ -106,6 +125,22 @@ For a topic question ("도시 대중교통 정기권은 효과가 있나") the l
 
 ## Validation (`lineage check`)
 
-`lineage page` and `lineage report-section` refuse to render and list problems when: a top-level key is missing, `meta.mode` is not lineage/topic, a lane index is out of range, a study node lacks `openalex`/`url` and gives no `unlinked` reason, a box title or subtitle (or event pill title) is wider than the box (Hangul counts about twice a Latin letter), more than 50 nodes, an edge points at an unknown node or has a type other than s/d/m/e, an `e` edge does not run from a study to an event, an event node is joined by a non-`e` edge, an event node sits outside the events lane or a study node inside it, there is more than one events lane, a `design` is not one of the five values, a row level is not one of the three values, or there are more than 12 lanes. In topic mode, also when a non-event lane has no `question`.
+`lineage page` and `lineage report-section` refuse to render and list problems when: a top-level key is missing, `meta.mode` is not lineage/topic, a lane index is out of range, a study node lacks `openalex`/`url` and gives no `unlinked` reason, a box title or subtitle (or event pill title) is wider than the box (Hangul counts about twice a Latin letter), more than 50 nodes, an edge points at an unknown node or has a type other than s/d/m/e/x, an edge object has a `basis` outside the five values or a non-string `evidence`, a `contested` entry lacks `claim`, has a side without `nodes`, names an unknown node, or has a `status` other than open/resolved/partly, an `e` edge does not run from a study to an event, an event node is joined by a non-`e` edge, an event node sits outside the events lane or a study node inside it, there is more than one events lane, a `design` is not one of the five values, a row level is not one of the three values, or there are more than 12 lanes. In topic mode, also when a non-event lane has no `question`.
 
-It prints warnings (and still renders) for more than 10 lanes, lanes with fewer than 2 nodes, unlinked study nodes, more than 40 nodes, edges that run backward in time (`e` edges excepted), and edges drawn through another box. In topic mode, also for a question lane without `answer`, more than 5 question lanes, and studies without `design`.
+It prints warnings (and still renders) for more than 10 lanes, lanes with fewer than 2 nodes, unlinked study nodes, more than 40 nodes, edges that run backward in time (`e` and `x` edges excepted), and edges drawn through another box. In topic mode, also for a question lane without `answer`, more than 5 question lanes, and studies without `design`.
+
+Then, offline from the local corpus (`data_dir` and `expanded_dir`: `corpus.json`, and `refs_meta.json` for works outside it), it checks the claims (skip with `--no-corpus`). All are warnings, so older files stay valid:
+
+| code | when |
+|---|---|
+| `edge_no_citation_link` | an `s` edge whose nodes both have OpenAlex IDs and whose later work's reference list is local, but the later work does not cite the earlier one (same year: either direction). Record the basis, use `d`, or look for a preprint/journal split |
+| `edge_no_basis` | `s` edges without `basis`/`evidence` (one line listing them) |
+| `contested_side_not_fulltext` | a node on a contested side has no row read in full text (level below `fulltext`, or no row at all) |
+| `contested_without_x_edge` | a contested claim with no `x` edge between its two sides |
+| `unsaturated_search` | `data/queries.json` exists and no logged query reached novelty < 10% |
+| `not_found_without_search_log` | verdict, trends or limits say something was not found (찾지 못, not found, …) but `data/searches.json` is missing |
+
+A summary line follows: `s edges: n with citation link, m without, k unverifiable (no OpenAlex/refs)`.
+
+The report chapter adds a **검색 방법과 범위** section only when there is something to say: an unsaturated query log, searches logged with `lineage log-search`, or `adoption`/`mentions` runs (listed by id so verdict text can cite `adoption#n`).
+

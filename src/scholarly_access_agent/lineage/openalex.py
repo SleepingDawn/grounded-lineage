@@ -22,7 +22,7 @@ USER_AGENT = "snu-research-agent-lineage"
 FIELDS = ",".join([
     "id", "doi", "title", "publication_year", "cited_by_count",
     "referenced_works", "authorships", "primary_location", "type",
-    "counts_by_year", "abstract_inverted_index", "ids", "keywords",
+    "counts_by_year", "abstract_inverted_index", "ids", "keywords", "language",
 ])
 REF_FIELDS = "id,doi,title,publication_year,cited_by_count,authorships,referenced_works"
 
@@ -169,3 +169,27 @@ def search(q: str, limit: int, select: str = FIELDS, prefer_relevance: bool = Tr
             pass
     works, total = top_mixed({k: v for k, v in base.items() if k != "per-page"}, limit)
     return {"results": list(works.values()), "meta": {"count": total}}
+
+
+def norm_doi(doi: str) -> str:
+    """'https://doi.org/10.1103/X' / 'doi:10.1103/x' -> '10.1103/x' (DOIs are case-insensitive)."""
+    d = doi.strip()
+    for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "doi:"):
+        if d.lower().startswith(prefix):
+            d = d[len(prefix):]
+    return d.lower()
+
+
+def resolve_dois(dois) -> dict:
+    """{normalised DOI: OpenAlex short ID} for the DOIs OpenAlex knows (50 per request)."""
+    dois = sorted({norm_doi(d) for d in dois if d.strip()})
+    out: dict = {}
+    for k in range(0, len(dois), 50):
+        chunk = [d for d in dois[k:k + 50] if "," not in d and "|" not in d]
+        if not chunk:
+            continue
+        r = get({"filter": "doi:" + "|".join(chunk), "per-page": 50, "select": "id,doi"})
+        for w in r.get("results", []):
+            if w.get("doi"):
+                out[norm_doi(w["doi"])] = short(w["id"])
+    return out

@@ -18,11 +18,13 @@ import json
 import sys
 from pathlib import Path
 
-from .page import (DESIGN_KO, Links, is_event, lane_name, load, mode, parse_desc, question_numbers, study_ref, svg,
-                   validate, warnings)
+from .page import (DESIGN_KO, DISPUTE_CSS, Links, contested_rows, edge_list, has_disputes, is_event, lane_name, load,
+                   mode, parse_desc, question_numbers, study_ref, svg, validate, warnings)
+from .searchlog import saturation, searches, unsaturated_ko
 
 STATUS = {"fulltext": "본문 확인", "excerpts": "발췌 확인", "secondary": "인용 맥락만", "abstract": "초록만 확인",
           "metadata": "미확인"}
+X_CAPTION = ", ≠ 표시가 있는 붉은 쇄선은 서로 상충하는 연구"
 VERSION = {"journal": "저널", "proceedings": "학회", "preprint": "프리프린트", "unknown": ""}
 
 
@@ -65,7 +67,7 @@ def events_md(L) -> list[str]:
     """Topic mode: the events band in one line, each event with the studies that evaluate it."""
     by_id = {n["id"]: n for n in L["nodes"]}
     evaluated: dict[str, list] = {}
-    for s, t, st in L["edges"]:
+    for s, t, st in edge_list(L):
         if st == "e":
             evaluated.setdefault(t, []).append(study_ref(by_id[s]))
     items = []
@@ -131,6 +133,65 @@ def evidence_md(L, data: Path) -> list[str]:
     return out + [""]
 
 
+def contested_md(L) -> list[str]:
+    """쟁점 table: claim | A | B | measurement difference | status | evidence level of each side."""
+    out = ["| 쟁점 | A | B | 측정 차이 | 상태 | 근거 수준 |", "|---|---|---|---|---|---|"]
+    out += ["| " + " | ".join(cell(x) for x in r) + " |" for r in contested_rows(L)]
+    return out + [""]
+
+
+def logged_counts(L, work: Path) -> list[dict]:
+    """adoption.json / mentions.json entries from the data and expanded dirs (what verdict text cites as adoption#n)."""
+    meta = L.get("meta") or {}
+    dirs = [meta.get("data_dir") or "data"] + ([meta["expanded_dir"]] if meta.get("expanded_dir") else [])
+    out = []
+    for d in dict.fromkeys(dirs):
+        for name in ("adoption.json", "mentions.json"):
+            for e in load(work / d / name, []) or []:
+                out.append({**e, "_dir": d})
+    return out
+
+
+def method_md(L, work: Path, data: Path) -> list[str]:
+    """Search method facts that the reader needs to weigh 'mainstream' and 'not found' claims; [] when none."""
+    out = []
+    state = saturation(data)
+    if state and not state["saturated"]:
+        out += [unsaturated_ko(state), ""]
+    elif state and (searches(data) or logged_counts(L, work)):
+        out += [f"검색 포화: 신규 비율 10% 미만에 이른 질의 {', '.join(state['saturated'])}.", ""]
+    qlog = load(data / "queries.json", []) or []
+    srcs = {e.get("gold_source") for e in qlog if e.get("gold")}
+    if out and srcs - {None}:
+        g = load(data / "gold.json") or {}
+        if srcs == {"independent"}:
+            out += [f"재현율의 정답 세트는 계보와 독립적으로 고정한 목록입니다 ({len(g.get('ids', []))}편"
+                    + (f", {g.get('note') or g['source']}" if g.get("note") or g.get("source") else "") + ").", ""]
+        elif "lineage" in srcs:
+            out += ["재현율의 정답 세트 일부는 계보도의 논문에서 뽑아 순환적입니다.", ""]
+    log = searches(data)
+    if log:
+        out += ["**OpenAlex 밖 검색**", "", "| 날짜 | 검색원 | 검색식 | 결과 | 남긴 것 |", "|---|---|---|---|---|"]
+        out += [f"| {cell(e.get('date'))} | {cell(e.get('engine'))} | {cell(e.get('query'))}"
+                + (f" ({cell(e['note'])})" if e.get("note") else "")
+                + f" | {cell(e.get('hits'))} | {cell(', '.join(e.get('kept', [])) or '없음')} |" for e in log]
+        out.append("")
+    counts = logged_counts(L, work)
+    if counts:
+        out += ["**수치 기록** (verdict가 인용하는 id)", ""]
+        for e in counts:
+            if e.get("id", "").startswith("adoption"):
+                out.append(f"- {e['id']} ({e['_dir']}, {e.get('date', '')}): 범위 `{e.get('scope')}`, 방법 "
+                           f"`{e.get('method')}`, 분모 = {'+'.join(e.get('roles', []))} 논문 → "
+                           f"{e.get('numerator')}/{e.get('denominator')}"
+                           + (f", 자기 인용 {e['self_citing']}/{e['numerator']}" if e.get("self_citing") is not None else ""))
+            else:
+                out.append(f"- {e.get('id')} ({e['_dir']}, {e.get('date', '')}): `{e.get('regex')}` → "
+                           f"{e.get('matches')}/{e.get('denominator')} ({'+'.join(e.get('roles', []))})")
+        out.append("")
+    return out
+
+
 def rows_md(L, links: Links) -> list[str]:
     topic = mode(L) == "topic"
     qn = question_numbers(L) if topic else {}
@@ -153,23 +214,29 @@ def rows_md(L, links: Links) -> list[str]:
 def topic_section(L, data: Path, links: Links, chapter: int, figure: str | None, html_name: str) -> str:
     """Topic mode chapter: the question map, then one row per reader question; empty parts are left out."""
     c = chapter
+    xcap = X_CAPTION if any(t == "x" for _, _, t in edge_list(L)) else ""
     out = [f"## {c}. 질문별 연구 지도", ""]
     if L.get("meta", {}).get("lede"):
         out += [L["meta"]["lede"], ""]
     if figure:
         out += [f"![질문 지도. 열은 독자의 질문, 맨 왼쪽 띠는 연구가 평가한 정책·사건, 행은 연도(등간격 아님). "
                 f"상자 색은 연구 설계, 각 열 끝의 굵은 칸은 지금의 답. 실선은 직접 계승, 점선은 개념적 연결, "
-                f"잔 점선은 연구가 평가한 사건. 상자를 누르면 원문이 열립니다 (단독 페이지: {html_name})]"
+                f"잔 점선은 연구가 평가한 사건{xcap}. 상자를 누르면 원문이 열립니다 (단독 페이지: {html_name})]"
                 f"({figure} \"interactive={html_name}\")", ""]
     parts = [("질문별 지금의 답", questions_table(L) + [""] + events_md(L))]
     if L.get("axes"):
         parts.append(("답이 갈리는 지점", axes_md(L)))
+    if L.get("contested"):
+        parts.append(("쟁점", contested_md(L)))
     if L.get("trends") or L.get("verdict"):
         parts.append(("주요 흐름", trends_md(L)))
     if L.get("one_line"):
         parts.append(("한 줄 요약", [L["one_line"], ""]))
     if (data / "analysis.json").exists():
         parts.append(("데이터로 본 근거", evidence_md(L, data)))
+    method = method_md(L, data.parent, data)
+    if method:
+        parts.append(("검색 방법과 범위", method))
     if L.get("rows"):
         parts.append(("근거 표와 근거 상태", rows_md(L, links)))
     if L.get("limits"):
@@ -183,26 +250,29 @@ def section(L, data: Path, links: Links, chapter: int, figure: str | None, html_
     if mode(L) == "topic":
         return topic_section(L, data, links, chapter, figure, html_name)
     c = chapter
+    xcap = X_CAPTION if any(t == "x" for _, _, t in edge_list(L)) else ""
     out = [f"## {c}. 계보와 흐름", ""]
     if L.get("meta", {}).get("lede"):
         out += [L["meta"]["lede"], ""]
     if figure:
         # The HTML report inlines the clickable page in place of the PNG ("interactive=" title).
         out += [f"![계보도. 열은 계열, 행은 연도(등간격 아님). 실선은 직접 계승, 점선은 개념적 연결, "
-                f"굵은 선은 인용 네트워크 주경로. 상자를 누르면 원문이 열립니다 (단독 페이지: {html_name})]"
+                f"굵은 선은 인용 네트워크 주경로{xcap}. 상자를 누르면 원문이 열립니다 (단독 페이지: {html_name})]"
                 f"({figure} \"interactive={html_name}\")", ""]
-    out += [f"### {c}.1 갈라진 지점", ""] + axes_md(L)
-    out += [f"### {c}.2 단계별 흐름", ""] + lanes_table(L) + [""]
-    out += [f"### {c}.3 주요 흐름", ""] + trends_md(L)
+    parts = [("갈라진 지점", axes_md(L)), ("단계별 흐름", lanes_table(L) + [""]), ("주요 흐름", trends_md(L))]
     if L.get("one_line"):
-        out += [f"### {c}.4 한 줄 요약", "", L["one_line"], ""]
-        n = 5
-    else:
-        n = 4
-    out += [f"### {c}.{n} 데이터로 본 근거", ""] + evidence_md(L, data)
-    out += [f"### {c}.{n + 1} 계보 표와 근거 상태", ""] + rows_md(L, links)
+        parts.append(("한 줄 요약", [L["one_line"], ""]))
+    if L.get("contested"):
+        parts.append(("쟁점", contested_md(L)))
+    parts.append(("데이터로 본 근거", evidence_md(L, data)))
+    method = method_md(L, data.parent, data)
+    if method:
+        parts.append(("검색 방법과 범위", method))
+    parts.append(("계보 표와 근거 상태", rows_md(L, links)))
     if L.get("limits"):
-        out += [f"### {c}.{n + 2} 이 계보의 한계", ""] + [f"- {x}" for x in L["limits"]] + [""]
+        parts.append(("이 계보의 한계", [f"- {x}" for x in L["limits"]] + [""]))
+    for k, (title, body) in enumerate(parts, 1):
+        out += [f"### {c}.{k} {title}", ""] + body
     return "\n".join(out)
 
 
@@ -218,6 +288,8 @@ def render_figure(L, links: Links, out_png: Path, scale: float = 2.0) -> Path:
     from playwright.sync_api import sync_playwright
 
     css = (Path(__file__).with_name("assets") / "page.css").read_text(encoding="utf-8")
+    if has_disputes(L):
+        css += DISPUTE_CSS
     html = (f"<!doctype html><html><head><meta charset='utf-8'><style>{css}{FIGURE_CSS}</style></head>"
             f"<body><div id='fig'>{svg(L, links)}</div></body></html>")
     out_png.parent.mkdir(parents=True, exist_ok=True)
