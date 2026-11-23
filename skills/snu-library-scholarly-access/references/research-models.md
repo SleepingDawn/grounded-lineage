@@ -8,7 +8,7 @@ Pick each agent's row by what its output becomes: a judgment that enters the rep
 | `reader` | Tier 2–3 full-text reading; closest-prior-work reading for novelty | `model: "opus"`, `effort: "high"` | `reasoning_effort: "high"` | `high` / `high` |
 | `judge` | question cards, novelty verdicts, feasibility, critique, inclusion decisions | `model: "opus"`, `effort: "high"` | `reasoning_effort: "high"` | `high` / `high` |
 | `writer` | report or draft from already-checked records | `model: "opus"`, `effort: "medium"` | `reasoning_effort: "medium"` | `medium` / `medium` |
-| `locator` | find candidates, resolve DOIs and journal versions, find open copies, fetch pages, check that cells are empty; no inclusion or evidence judgments | `model: "sonnet"`, `effort: "medium"` | `reasoning_effort: "medium"` | `medium` / `medium` |
+| `locator` | find candidates, fetch pages, check that cells are empty (versions and open copies come from `scholarly-access-agent resolve`, not an agent); no inclusion or evidence judgments | `model: "sonnet"`, `effort: "low"` | `reasoning_effort: "low"` | `low` / `medium` |
 
 Codex: no model override; the role sets only `reasoning_effort`.
 

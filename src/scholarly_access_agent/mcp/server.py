@@ -9,6 +9,8 @@ from typing import Any
 from scholarly_access_agent.providers.snu.proxy import SnuProxyProvider
 from scholarly_access_agent.runtime.pdf import discover_pdfs, download_pdf
 
+TERMS_MAX_CHARS = 4000  # default excerpt budget for terms mode (read_pdf and read_url)
+
 # Keep the real stdout for JSON-RPC messages
 
 
@@ -129,15 +131,16 @@ def _handle_read_pdf(arguments: dict[str, Any]) -> dict[str, object]:
     return read_pdf(
         arguments["path"], terms=arguments.get("terms"),
         pages=arguments.get("pages", "1-5"),
-        max_chars=arguments.get("max_chars", 16000),
+        max_chars=arguments.get("max_chars"),  # None: 4000 with terms, 16000 for pages
     )
 
 
 def _handle_read_url(arguments: dict[str, Any]) -> dict[str, object]:
     from scholarly_access_agent.runtime.public import read_url
+    max_chars = arguments.get("max_chars") or (TERMS_MAX_CHARS if arguments.get("terms") else 12000)
     return read_url(
         arguments["url"], terms=arguments.get("terms"), sections=arguments.get("sections"),
-        max_chars=arguments.get("max_chars", 12000),
+        max_chars=max_chars,
     )
 
 
@@ -178,16 +181,16 @@ async def discover_tool(url: str, timeout_seconds: int = 30) -> dict[str, Any]:
     return await asyncio.to_thread(_private_call, _handle_discover_pdfs, locals())
 
 @mcp.tool()
-def read_pdf(path: str, terms: list[str] | None = None, pages: str | None = None, max_chars: int = 16000) -> dict[str, Any]:
-    """Read authorized local PDF evidence. Choose exactly one mode: terms searches the document; pages reads complete page context. To inspect pages after locating terms, OMIT terms entirely. Never provide both. Missing term hits do not establish irrelevance."""
+def read_pdf(path: str, terms: list[str] | None = None, pages: str | None = None, max_chars: int | None = None) -> dict[str, Any]:
+    """Read authorized local PDF evidence. Choose exactly one mode: terms searches the document; pages reads complete page context. To inspect pages after locating terms, OMIT terms entirely. Never provide both. Missing term hits do not establish irrelevance. max_chars defaults to 4000 with terms (up to 8 excerpts), 16000 for pages."""
     if terms and pages is not None:
         raise ValueError("Choose terms OR pages. To read page context, omit terms entirely.")
     return _handle_read_pdf({"path": path, "terms": terms, "pages": pages or "1-5", "max_chars": max_chars})
 
 
 @mcp.tool(name="read_url")
-async def read_url_tool(url: str, terms: list[str] | None = None, sections: list[str] | None = None, max_chars: int = 12000) -> dict[str, Any]:
-    """Text-first reading of open-access full text (arXiv HTML, PMC, Europe PMC, chemRxiv, bioRxiv) without the SNU session. No terms/sections: outline with section sizes, abstract and figure captions/image URLs. terms: locate excerpts with section names. sections: read named sections in full context. Never provide both terms and sections."""
+async def read_url_tool(url: str, terms: list[str] | None = None, sections: list[str] | None = None, max_chars: int | None = None) -> dict[str, Any]:
+    """Text-first reading of open-access full text (arXiv HTML, PMC, Europe PMC, chemRxiv, bioRxiv) without the SNU session. No terms/sections: outline with section sizes, abstract and figure captions/image URLs. terms: locate excerpts with section names. sections: read named sections in full context. Never provide both terms and sections. max_chars defaults to 4000 with terms (up to 8 excerpts), 12000 for sections."""
     if terms and sections:
         raise ValueError("Choose terms OR sections. To read section context, omit terms entirely.")
     result = await asyncio.to_thread(_private_call, _handle_read_url, {"url": url, "terms": terms, "sections": sections, "max_chars": max_chars})

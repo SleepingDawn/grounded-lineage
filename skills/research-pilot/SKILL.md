@@ -61,11 +61,15 @@ In Claude Code use AskUserQuestion with the recommendation first; elsewhere a nu
 
 ## Sub-agents
 
-Every sub-agent's brief begins: "Read <path>/worker.md before anything else.", where `<path>` is the absolute directory this SKILL.md was loaded from (the skill's base directory). Then the task, the role's model and effort (passed explicitly), file paths rather than pasted text, and the output shape. See [worker.md](worker.md).
+Every sub-agent's brief begins with the output of `scholarly-access-agent pack reader`, pasted unchanged, then the shared task line, then the part that differs (papers, folder, allowance) — the brief layout, launch order and file handback in snu-library `research-workflow.md` ("Delegating reading"). Pass the role's model and effort explicitly. [worker.md](worker.md) adds the pilot-specific rules.
 
 ## Fresh session
 
 The main agent's every tool call re-reads the session's whole context. When a run would start in a session already holding a long conversation (over ~100k tokens of context), say once that the same run costs several times less in a fresh session, offer to continue there (with the topic folder and settings it needs), and continue here if the user prefers.
+
+## Stage handoff
+
+A topics run that first builds its review is two stages. When the review stage ends with the main context above ~100k tokens, log `event: handoff` in `run.jsonl` (next step, settings, folder) and offer to continue in a fresh session ("research-pilot 이어서 <Topic>"): the evidence records, the log and the settings file carry everything the next stage needs. Under auto-recommend, take the handoff when the client can start a session; otherwise continue and say once that it costs more.
 
 ## Judge steps in the main agent
 

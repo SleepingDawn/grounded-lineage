@@ -25,7 +25,7 @@ Read [research-workflow.md](references/research-workflow.md) for tiers, budgets 
 
 For questions about where a concept or method came from, how it branched and what is mainstream now (연구 흐름, 계보), use the research-lineage skill with this one: it builds the citation lineage and writes a lineage chapter (stage table, trends, diagram) for this report.
 
-For more than about 15 papers to read, delegate Tier 2–3 reading to parallel sub-agents in batches, with the `reader` row of [research-models.md](references/research-models.md) (opus, effort `high`) so the main context holds only compact evidence records.
+For more than about 15 papers to read, delegate Tier 2–3 reading to parallel sub-agents in batches, with the `reader` row of [research-models.md](references/research-models.md) (opus, effort `high`); each brief opens with [reader-pack.md](references/reader-pack.md) (`scholarly-access-agent pack reader`), readers write records to files and return ≤ 10 lines (research-workflow.md, "Delegating reading").
 
 ## Runtime boundaries
 

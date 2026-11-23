@@ -214,7 +214,8 @@ def build_parser() -> argparse.ArgumentParser:
     read_pdf_command.add_argument("path", help="Local PDF path from download-pdf or a user-provided PDF.")
     read_pdf_command.add_argument("--terms", nargs="+", help="Up to 12 English/scientific terms or phrases to locate.")
     read_pdf_command.add_argument("--pages", default="1-5", help="Page or range; ignored when terms are provided.")
-    read_pdf_command.add_argument("--max-chars", type=int, default=16000)
+    read_pdf_command.add_argument("--max-chars", type=int, default=None,
+                                  help="Text budget (default: 4000 with --terms, 16000 for --pages).")
 
     read_url_command = subcommands.add_parser(
         "read-url", help="Text-first reading of open-access HTML full text (arXiv, PMC) with section names.",
@@ -222,7 +223,8 @@ def build_parser() -> argparse.ArgumentParser:
     read_url_command.add_argument("url", help="arXiv abs/pdf/html URL or another open-repository article URL.")
     read_url_command.add_argument("--terms", nargs="+", help="Up to 12 terms to locate (excerpts with section names).")
     read_url_command.add_argument("--sections", nargs="+", help="Section names to read in full; omit with --terms.")
-    read_url_command.add_argument("--max-chars", type=int, default=12000)
+    read_url_command.add_argument("--max-chars", type=int, default=None,
+                                  help="Text budget (default: 4000 with --terms, 12000 for --sections).")
 
     render_report_command = subcommands.add_parser(
         "render-report",
@@ -281,6 +283,17 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser(
         "report",
         help="Trace a report's citation keys and numbers back to evidence records (trace).",
+        add_help=False,
+    )
+    subcommands.add_parser(
+        "pack",
+        help="Print the reader pack byte-for-byte (shared cached prefix for sub-agent briefs); "
+             "--check prints its hash and size.",
+        add_help=False,
+    )
+    subcommands.add_parser(
+        "resolve",
+        help="DOI -> Crossref record, Unpaywall open copies and a ranked list of reading routes.",
         add_help=False,
     )
 
@@ -349,7 +362,8 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "read-url":
         from scholarly_access_agent.runtime.public import read_url
-        result = read_url(args.url, terms=args.terms, sections=args.sections, max_chars=args.max_chars)
+        max_chars = args.max_chars or (4000 if args.terms else 12000)
+        result = read_url(args.url, terms=args.terms, sections=args.sections, max_chars=max_chars)
         write_json(result)
         return 0 if result["ok"] else 1
 
@@ -509,6 +523,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         from scholarly_access_agent.trace import main as trace_main
 
         return trace_main(argv[1:])
+    if argv[:1] == ["pack"]:
+        from scholarly_access_agent.pack import main as pack_main
+
+        return pack_main(argv[1:])
+    if argv[:1] == ["resolve"]:
+        from scholarly_access_agent.resolve import main as resolve_main
+
+        return resolve_main(argv[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

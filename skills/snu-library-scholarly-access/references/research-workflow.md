@@ -33,7 +33,18 @@ Deep reads more of what is accessible; it never widens access. Bot checks, `logi
 Keep `max_chars` small (4–8k) for term searches and raise it only for the sections you must read whole. Prefer one `sections` call over repeated term calls once you know where the evidence is.
 
 ## Delegating reading to sub-agents
-When the Tier 2–3 list exceeds about 15 papers, split it into batches of 4–6 papers per sub-agent and run batches in parallel. Before dispatching, run the session preflight (`doctor` with `probe_url`, publisher-routes.md) so subscription papers do not end at the abstract. Give each sub-agent: the question, the criteria from dft-mlip.md (or the task's own), the paper identifiers and the route from publisher-routes.md for each, the tier rules above, and the instruction to return only evidence records in evidence-format.md (JSON, ≤ 300 words per paper) with section names or PDF pages. Sub-agents must not write the synthesis. The main agent merges records, resolves version conflicts, spot-checks the 3–5 numbers the conclusion rests on (`scholarly-access-agent evidence verify <topic folder> --write` for records with a local `source_file`; otherwise `read_url`/`read_pdf`, noted in the record's `verified_by`), then writes the synthesis with citation keys (report-pdf.md) and runs `report trace`. Sub-agents follow the same access rules; delegation never relaxes them.
+When the Tier 2–3 list exceeds about 15 papers, split it into batches of 4–6 papers per sub-agent. Before dispatching, run the session preflight (`doctor` with `probe_url`, publisher-routes.md) so subscription papers do not end at the abstract, and `scholarly-access-agent resolve <DOI>` for each paper so the brief carries its route instead of a locator agent finding it.
+
+**Brief layout (prompt caching).** Caching matches identical prompt prefixes only, so every brief has the same opening bytes:
+1. the output of `scholarly-access-agent pack reader`, unchanged (same text, same order, nothing inserted);
+2. one fixed line of shared task context (question and criteria — identical across the batches of a run);
+3. last, the part that differs: this batch's papers with their `resolve` routes, output folder, allowance.
+
+Readers then need no other skill file, and every brief after the first reuses the cached prefix.
+
+**Launch order.** A cache entry is readable only once the first request using it has started responding; briefs sent at the same moment all pay in full. Launch the first batch, wait until it has made its first tool call, then launch the rest together.
+
+**Handback through files.** Readers write their evidence records into `<topic>/evidence/` and return at most 10 lines (paths, counts, blocked items). The main agent reads the records through `evidence lint`, `evidence labels` and `report trace`, not by pasting them into its context: everything in the main context is re-read on every later call. Sub-agents must not write the synthesis. The main agent merges records, resolves version conflicts, spot-checks the 3–5 numbers the conclusion rests on (`scholarly-access-agent evidence verify <topic folder> --write` for records with a local `source_file`; otherwise `read_url`/`read_pdf`, noted in the record's `verified_by`), then writes the synthesis with citation keys (report-pdf.md) and runs `report trace`. Sub-agents follow the same access rules; delegation never relaxes them.
 
 ## Models and reasoning effort
 Sub-agent judgments (is this a method the study used, which version was read) become report evidence, and the main agent re-checks only a few numbers, so readers run as strong as the main agent.
