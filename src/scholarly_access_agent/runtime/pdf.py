@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from scholarly_access_agent.core.urls import looks_like_pdf_url, pdf_url_rank
 from scholarly_access_agent.providers.snu.login import (
@@ -125,6 +125,8 @@ def download_pdf(
     provider = provider or SnuProxyProvider()
     resolved_download_dir = (download_dir or DEFAULT_DOWNLOAD_DIR).resolve()
     resolved_profile_dir = (profile_dir or DEFAULT_PROFILE_DIR).resolve()
+    source_url = resolve_doi_url(source_url, timeout_seconds=min(timeout_seconds, 20))
+    source_url, pdf_url = _split_pdf_endpoint(source_url, pdf_url)
 
     if not provider.supports_url(source_url):
         return _failure(
@@ -142,6 +144,17 @@ def download_pdf(
             resolved_profile_dir,
         )
 
+    # Hosts whose article pages show bot checks to a headless browser while the
+    # derived PDF endpoint serves the bytes: try that endpoint before opening the page.
+    if urlparse(source_url).netloc.lower() in _DIRECT_FIRST_HOSTS:
+        for candidate in derive_candidates_from_source(source_url, source_url)[:1]:
+            first = _download_pdf_direct(
+                source_url, candidate.href, provider, resolved_download_dir, timeout_seconds,
+                resolved_profile_dir,
+            )
+            if first.ok:
+                return first
+
     proxy_url = provider.proxied_url(source_url)
 
     playwright_factory = _try_load_playwright()
@@ -155,6 +168,55 @@ def download_pdf(
         resolved_profile_dir, browser_channel, timeout_seconds, headless,
         playwright_factory,
     )
+
+
+_DIRECT_FIRST_HOSTS = ("journals.aps.org",)
+_DOI_RESOLVER_HOSTS = ("doi.org", "dx.doi.org", "www.doi.org", "link.aps.org")
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401 - stop at each hop
+        return None
+
+
+def resolve_doi_url(url: str, *, timeout_seconds: int = 20, max_hops: int = 4) -> str:
+    """Turn `doi:10.x/...`, `https://doi.org/10.x/...` or `link.aps.org/doi/...` into the
+    publisher's article URL by following redirects without a browser (only the DOI is sent).
+    Any other URL, or a failed lookup, is returned unchanged."""
+
+    text = url.strip()
+    if text.lower().startswith("doi:"):
+        text = "https://doi.org/" + text[4:].strip()
+    elif re.match(r"^10\.\d{4,}/\S+$", text):
+        text = "https://doi.org/" + text
+    if urlparse(text).netloc.lower() not in _DOI_RESOLVER_HOSTS:
+        return url
+    opener = build_opener(_NoRedirect)
+    current = text
+    for _ in range(max_hops):
+        try:
+            opener.open(Request(current, method="HEAD", headers={"User-Agent": "Mozilla/5.0"}),
+                        timeout=timeout_seconds)
+            return current
+        except HTTPError as exc:
+            location = exc.headers.get("Location") if exc.code in (301, 302, 303, 307, 308) else None
+            if not location:
+                return current if current != text else url
+            current = urljoin(current, location)
+            if urlparse(current).netloc.lower() not in _DOI_RESOLVER_HOSTS:
+                return current
+        except (URLError, OSError, ValueError):
+            return url
+    return current
+
+
+def _split_pdf_endpoint(source_url: str, pdf_url: str | None) -> tuple[str, str | None]:
+    """An APS `/<journal>/pdf/<DOI>` link given as the source is fetched as the PDF of its
+    abstract page: opening the PDF link as a page meets the bot check, fetching it does not."""
+    match = re.match(r"^(https?://journals\.aps\.org)/([a-z]+)/pdf/(10\.\d{4,}/.+?)/?$", source_url, re.I)
+    if match and not pdf_url:
+        return f"{match.group(1)}/{match.group(2)}/abstract/{match.group(3)}", source_url
+    return source_url, pdf_url
 
 
 def discover_pdfs(
