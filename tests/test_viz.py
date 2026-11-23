@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 
 from scholarly_access_agent import cli
-from scholarly_access_agent.viz import effects, lineage_charts, matrix, novelty
-from scholarly_access_agent.viz.common import VEGA, VEGA_EMBED, VEGA_LITE, VizError, page_html
+from scholarly_access_agent.viz import effects, lineage_charts
+from scholarly_access_agent.viz.common import DARK, LIGHT, VEGA, VEGA_EMBED, VEGA_LITE, VizError, page_html
 
 
 def write(path: Path, data) -> None:
@@ -29,31 +29,12 @@ def res(rid, value, unit="W/mK", **extra):
             **extra}
 
 
-MATRIX_MD = """# 공백 행렬
-
-## 힘 × 방식
-
-| 힘 \\ 방식 | MD 직접 (GK) | 모드 분해 (AF·NMD) |
-| --- | --- | --- |
-| 경험 포텐셜 (BKS) | covered — [alpha2014] [beta2020] | **contested** — [alpha2014] vs [beta2020] |
-| 범용 MLIP (MACE) | **empty-searched** (2 queries) | empty-unsearched |
-| DFT 직접 | thin: [beta2020] C9 | 메모만 |
-
-## 영역
-
-| 영역 | 상태 |
-| --- | --- |
-| 저온 | thin |
-"""
-
-CARDS_MD = """# 카드
-
-## C1 — 범용 MLIP 모드 분해
-- **Gap:** 범용 MLIP × 모드 분해 (`empty-unsearched`), 문헌 공백
-
-## C2 — 저온 PIMD
-- **Gap:** PIMD × 유리 (`empty-searched`)
-"""
+def leaves(spec: dict) -> list[dict]:
+    """Every unit layer of a (nested) layer spec."""
+    out = []
+    for lay in spec.get("layer") or []:
+        out.extend(leaves(lay) if "layer" in lay else [lay])
+    return out
 
 
 class Topic:
@@ -105,29 +86,99 @@ class EffectsTests(unittest.TestCase):
         self.assertEqual(by_id["r1"]["label"], "본문 확인")
         self.assertEqual(by_id["r3"]["label"], "발췌 확인")  # read_mode terms
         self.assertEqual(by_id["b1"]["label"], "초록만 확인")
+        self.assertEqual([by_id[k]["fill"] for k in ("r1", "r3", "b1")], ["full", "half", "hollow"])
         self.assertEqual(by_id["r1"]["design"], "모형")
         self.assertEqual(by_id["b1"]["design"], "관찰")
         self.assertEqual(by_id["r1"]["study"], "Alpha 2014")
         self.assertEqual(by_id["b1"]["study"], "Beta 2020")
-        point = spec["layer"][-1]
-        scale = point["encoding"]["fillOpacity"]["scale"]
-        self.assertEqual(dict(zip(scale["domain"], scale["range"])), {"본문 확인": 1.0, "발췌 확인": 0.45, "초록만 확인": 0.0})
-        self.assertEqual(spec["usermeta"]["access_key"][-1], {"label": "초록만 확인", "fill_opacity": 0.0})
-        colors = point["encoding"]["color"]["scale"]
-        self.assertEqual(dict(zip(colors["domain"], colors["range"])), {"모형": "#0072B2", "관찰": "#009E73"})
-        band = spec["layer"][0]
-        self.assertEqual(band["data"]["values"][0]["lo"], 1.3)
-        self.assertEqual(band["data"]["values"][0]["text"], "실험")
+        self.assertEqual(by_id["r1"]["value_text"], "14.0–24.0")  # a printed range is shown as printed
+        self.assertEqual(by_id["r2"]["value_text"], "2.1")
         self.assertIn("미확인 1건 생략", meta["notes"])
-        # ordered by year: Alpha 2014 rows before Beta 2020
-        order = point["encoding"]["y"]["sort"]
-        self.assertTrue(order.index(by_id["r1"]["row"]) < order.index(by_id["b1"]["row"]))
         self.assertEqual(spec["width"], "container")
+        # design colours on every dot, whisker and cap
+        colors = [lay["encoding"]["color"]["scale"] for lay in leaves(spec)
+                  if "color" in lay.get("encoding", {}) and "scale" in lay["encoding"]["color"]]
+        self.assertTrue(colors)
+        for c in colors:
+            self.assertEqual(dict(zip(c["domain"], c["range"])), {"모형": "#0072B2", "관찰": "#009E73"})
+        # the half fill is a custom half-disc drawn on top of the ring
+        shapes = [lay["mark"].get("shape") for lay in leaves(spec) if isinstance(lay.get("mark"), dict)]
+        self.assertIn(effects.HALF_PATH, shapes)
+        # the reference band: neutral fill, its label with range and unit
+        band_data = next(lay for lay in spec["layer"] if lay.get("data", {}).get("values", [{}])[0].get("hi") == 1.4)
+        self.assertEqual(band_data["data"]["values"][0]["text"], "실험 1.3–1.4 W/mK")  # 1 decimal on a 0-25 axis
+        band_rects = [lay for lay in leaves(spec) if isinstance(lay.get("mark"), dict)
+                      and lay["mark"].get("type") == "rect" and lay["mark"].get("color") == LIGHT["band"]]
+        self.assertEqual(len(band_rects), 2)  # the wide column and the narrow per-row strips
+        # title + subtitle with quantity, unit, counts and the band takeaway
+        head = spec["usermeta"]["header"]
+        self.assertEqual(head["title"], "연구마다 kappa 값은 얼마나 다른가?")
+        self.assertIn("kappa (W/mK)", head["subtitle"])
+        self.assertIn("2편에서 4개 값", head["subtitle"])
+        self.assertIn("1개가 실험 범위 안", head["subtitle"])  # b1 1.35
+        # one legend row: design chips, read-depth chips, the band chip
+        legend = spec["usermeta"]["legend"]
+        self.assertEqual(legend[0]["title"], "연구 설계")
+        self.assertEqual([(i["label"], i["color"]) for i in legend[0]["items"]],
+                         [("모형", "#0072B2"), ("관찰", "#009E73")])
+        self.assertEqual(legend[1]["items"], [{"label": "본문 확인", "swatch": "full"},
+                                             {"label": "발췌 확인", "swatch": "half"},
+                                             {"label": "초록만 확인", "swatch": "hollow"}])
+        self.assertEqual(legend[2]["items"], [{"label": "실험 범위", "swatch": "band"}])
 
-    def test_sort_by_value(self):
+    def test_rows_grouped_by_design_then_year(self):
+        spec, meta = effects.build(self.t.root, "kappa")
+        rows = spec["data"]["values"]
+        self.assertTrue(meta["grouped"])
+        # 모형 first (fixed design order), year then value inside: r3 1.6, r2 2.1, r1 19 (all 2014); then 관찰
+        self.assertEqual([r["id"] for r in rows], ["r3", "r2", "r1", "b1"])
+        self.assertEqual([r["y"] for r in rows], sorted(r["y"] for r in rows))
+        self.assertEqual([r["yn"] for r in rows], sorted(r["yn"] for r in rows))
+        heads = [v for lay in leaves(spec) for v in (lay.get("data") or {}).get("values", []) if "n" in v]
+        self.assertEqual([h["text"] for h in heads], ["모형 · 3개 값", "관찰 · 1개 값"])
+        self.assertTrue(heads[0]["y"] < rows[0]["y"] < heads[1]["y"] < rows[3]["y"])
+        # both row layouts are carried; the page picks one from its width
+        layout = spec["usermeta"]["rows"]
+        self.assertEqual(layout["height"], spec["height"])
+        self.assertGreater(layout["narrow_height"], layout["height"])
+        self.assertIn("narrow", [p["name"] for p in spec["params"]])
+
+    def test_sort_by_value_inside_groups(self):
         spec, _ = effects.build(self.t.root, "kappa", sort="value")
-        values = [r["value"] for r in spec["data"]["values"]]
-        self.assertEqual(values, sorted(values))
+        rows = spec["data"]["values"]
+        for design in ("모형", "관찰"):
+            values = [r["value"] for r in rows if r["design"] == design]
+            self.assertEqual(values, sorted(values))
+        self.assertIn("값 순", spec["usermeta"]["header"]["subtitle"])
+
+    def test_single_design_has_no_group_headers(self):
+        spec, meta = effects.build(self.t.root, ".", unit="GPa")
+        self.assertFalse(meta["grouped"])
+        heads = [v for lay in leaves(spec) for v in (lay.get("data") or {}).get("values", []) if "n" in v]
+        self.assertEqual(heads, [])
+        self.assertEqual(spec["usermeta"]["legend"][0]["items"][0]["label"], "리뷰")
+
+    def test_domain_covers_whiskers_and_clips_runaways_with_an_arrow(self):
+        domain, _, _ = effects.axis_domain([{"value": 2.0, "lo": 1.0, "hi": 3.0},
+                                            {"value": 2.5, "lo": None, "hi": None}], (1.3, 1.4))
+        self.assertLess(domain[0], 1.0)
+        self.assertGreater(domain[1], 3.0)
+        write(self.t.root / "evidence" / "eps2021.json", record("Eve Eps", 2021, design="simulation model", results=[
+            res("e1", 2.0, lo=0.5, hi=80)]))
+        spec, _ = effects.build(self.t.root, "kappa", band=(1.3, 1.4))
+        row = next(r for r in spec["data"]["values"] if r["id"] == "e1")
+        self.assertTrue(row["clip_hi"])
+        self.assertFalse(row["clip_lo"])
+        self.assertLess(row["hi_draw"], 80)
+        carrier = next(lay for lay in leaves(spec) if lay.get("encoding", {}).get("x", {}).get("axis"))
+        lo, hi = carrier["encoding"]["x"]["scale"]["domain"]
+        self.assertGreaterEqual(row["hi_draw"], hi - (hi - lo) * 0.1)  # the arrow sits at the right edge
+        self.assertLessEqual(row["hi_draw"], hi)
+        self.assertIn({"label": "축 밖으로 이어지는 범위", "swatch": "arrow"}, spec["usermeta"]["legend"][-1]["items"])
+        shapes = [lay["mark"].get("shape") for lay in leaves(spec) if isinstance(lay.get("mark"), dict)]
+        self.assertIn("triangle-right", shapes)
+        spec2, _ = effects.build(self.t.root, "kappa", title="실험과 맞는 계산은?")
+        self.assertEqual(spec2["usermeta"]["header"]["title"], "실험과 맞는 계산은?")
 
     def test_mixed_units_refused_with_list(self):
         with self.assertRaises(VizError) as ctx:
@@ -149,112 +200,6 @@ class EffectsTests(unittest.TestCase):
     def test_no_match(self):
         with self.assertRaises(VizError):
             effects.build(self.t.root, "viscosity")
-
-
-class MatrixTests(unittest.TestCase):
-    def setUp(self):
-        self.t = Topic()
-        self.addCleanup(self.t.cleanup)
-        write(self.t.root / "ideas" / "matrix.md", MATRIX_MD)
-        write(self.t.root / "ideas" / "cards.md", CARDS_MD)
-
-    def test_parse_first_table(self):
-        m = matrix.parse_matrix_md(MATRIX_MD)
-        self.assertEqual(m["row_axis"], "힘")
-        self.assertEqual(m["column_axis"], "방식")
-        self.assertEqual(m["columns"], ["MD 직접 (GK)", "모드 분해 (AF·NMD)"])
-        self.assertEqual(m["rows"], ["경험 포텐셜 (BKS)", "범용 MLIP (MACE)", "DFT 직접"])  # second table ignored
-        cells = {(c["row"], c["column"]): c for c in m["cells"]}
-        first = cells[("경험 포텐셜 (BKS)", "MD 직접 (GK)")]
-        self.assertEqual(first["state"], "covered")
-        self.assertEqual(first["refs"], ["alpha2014", "beta2020"])
-        self.assertEqual(cells[("경험 포텐셜 (BKS)", "모드 분해 (AF·NMD)")]["state"], "contested")
-        self.assertEqual(cells[("범용 MLIP (MACE)", "MD 직접 (GK)")]["state"], "empty-searched")
-        self.assertEqual(cells[("범용 MLIP (MACE)", "모드 분해 (AF·NMD)")]["state"], "empty-unsearched")
-        self.assertEqual(cells[("DFT 직접", "MD 직접 (GK)")]["cards"], ["C9"])
-        no_kw = cells[("DFT 직접", "모드 분해 (AF·NMD)")]
-        self.assertFalse(no_kw["state_given"])
-
-    def test_build_writes_matrix_json_then_reads_it(self):
-        spec, meta = matrix.build(self.t.root)
-        j = self.t.root / "ideas" / "matrix.json"
-        self.assertTrue(j.exists())
-        data = json.loads(j.read_text(encoding="utf-8"))
-        placed = {(c["row"], c["column"]): c["cards"] for c in data["cells"]}
-        self.assertEqual(placed[("범용 MLIP (MACE)", "모드 분해 (AF·NMD)")], ["C1"])
-        self.assertEqual(data["unplaced_cards"], ["C2"])
-        values = spec["data"]["values"]
-        self.assertEqual(len(values), 6)
-        covered = next(v for v in values if v["row_full"] == "경험 포텐셜 (BKS)" and v["col_full"] == "MD 직접 (GK)")
-        self.assertTrue(covered["mark"].startswith("●"))
-        self.assertIn("Alpha 2014", covered["papers"])
-        c1 = next(v for v in values if v["cards"] == "C1")
-        self.assertEqual(c1["mark"], "? C1")
-        domain = spec["layer"][0]["encoding"]["color"]["scale"]["domain"]
-        self.assertEqual(len(domain), 5)
-        self.assertIn("matrix.md", meta["source"])
-        # edit the JSON: later runs use it rather than the Markdown
-        data["cells"][0]["state"] = "thin"
-        write(j, data)
-        spec2, meta2 = matrix.build(self.t.root)
-        self.assertIn("matrix.json", meta2["source"])
-        self.assertTrue(spec2["data"]["values"][0]["state"].startswith("◔ thin"))
-
-    def test_no_write_json(self):
-        matrix.build(self.t.root, write_json=False)
-        self.assertFalse((self.t.root / "ideas" / "matrix.json").exists())
-
-    def test_missing_matrix(self):
-        (self.t.root / "ideas" / "matrix.md").unlink()
-        with self.assertRaises(VizError):
-            matrix.build(self.t.root)
-
-
-class NoveltyTests(unittest.TestCase):
-    def setUp(self):
-        self.t = Topic()
-        self.addCleanup(self.t.cleanup)
-        nov = self.t.root / "ideas" / "novelty"
-        write(nov / "C1.json", {"card": "C1", "verdict": "novel", "closest": [
-            {"paper_id": "10.1/Ann Alpha2014", "access": "fulltext_pdf", "read_via": "evidence/alpha2014.json",
-             "grade": "Medium"},
-            {"paper_id": "arXiv:1", "access": "abstract_only", "read_via": "web_summary", "grade": "Medium"},
-            {"paper_id": "arXiv:2", "access": "unavailable", "read_via": "none", "grade": "Low"}]})
-        write(nov / "C10.json", {"card": "C10", "closest": [
-            {"paper_id": "arXiv:3", "access": "excerpts", "grade": "High"}]})
-        write(nov / "C2.json", {"card": "C2", "verdict": "reframe", "closest": [
-            {"paper_id": "arXiv:4", "access": "fulltext_pdf", "read_via": "read_pdf", "pdf_page": 2,
-             "read_mode": "pages", "grade": "unknown"}]})
-
-    def test_strip_positions_access_and_verdicts(self):
-        spec, meta = novelty.build(self.t.root)
-        pts = spec["layer"][0]["data"]["values"]
-        self.assertEqual(len(pts), 4)  # the unavailable one is left out
-        c1 = sorted((p for p in pts if p["card"] == "C1"), key=lambda p: p["x"])
-        self.assertEqual([p["grade"] for p in c1], ["Medium", "Medium"])
-        self.assertAlmostEqual(c1[0]["x"] + c1[1]["x"], 6.0)  # two papers centred on Medium (3)
-        self.assertNotEqual(c1[0]["x"], c1[1]["x"])
-        labels = {p["paper"]: p["label"] for p in pts}
-        self.assertEqual(labels["Alpha 2014"], "본문 확인")  # read through the evidence record
-        self.assertEqual(labels["arXiv:1"], "초록만 확인")
-        self.assertEqual(labels["arXiv:3"], "발췌 확인")
-        self.assertEqual(labels["arXiv:4"], "본문 확인")
-        unknown = next(p for p in pts if p["paper"] == "arXiv:4")
-        self.assertEqual((unknown["g"], unknown["grade"]), (0, "미등급"))
-        verdicts = spec["layer"][1]["data"]["values"]
-        self.assertEqual([v["card"] for v in verdicts], ["C1", "C2", "C10"])  # numeric card order
-        texts = {v["card"]: v["text"] for v in verdicts}
-        self.assertEqual(texts["C1"], "새로움 · 미확인 1")
-        self.assertEqual(texts["C2"], "재구성")
-        self.assertEqual(texts["C10"], "재구성")  # no stored verdict: derived from the High grade
-        self.assertEqual(spec["layer"][0]["encoding"]["x"]["scale"]["domain"][0], -0.5)  # room for 미등급
-        self.assertIn("미확인 1편 생략", meta["notes"])
-
-    def test_no_novelty(self):
-        empty = tempfile.TemporaryDirectory()
-        self.addCleanup(empty.cleanup)
-        with self.assertRaises(VizError):
-            novelty.build(Path(empty.name))
 
 
 class LineageChartTests(unittest.TestCase):
@@ -326,8 +271,7 @@ class PageAndCliTests(unittest.TestCase):
         self.addCleanup(self.t.cleanup)
 
     def test_page_has_pinned_cdn_and_height_script(self):
-        page = page_html({"mark": "point", "usermeta": {"access_key": [{"label": "본문 확인", "fill_opacity": 1}]}},
-                         "제목 </title>", "자료: x <b>")
+        page = page_html({"mark": "point"}, "제목 </title>", "자료: x <b>")
         for url in (VEGA, VEGA_LITE, VEGA_EMBED):
             self.assertIn(f'<script src="{url}"></script>', page)
         self.assertIn("vega@5.30.0", VEGA)
@@ -340,7 +284,33 @@ class PageAndCliTests(unittest.TestCase):
         self.assertIn("background: transparent", page)
         self.assertIn("자료: x &lt;b&gt;", page)
         self.assertIn("제목 &lt;/title&gt;", page)
-        self.assertIn("본문 확인", page)
+        self.assertNotIn('class="legend"', page)  # no legend asked for, none drawn
+        self.assertNotIn('class="fhead"', page)
+
+    def test_page_title_and_legend_row_sit_above_the_plot(self):
+        spec = {"mark": "point", "usermeta": {
+            "header": {"title": "질문 <i>?", "subtitle": "부제 · n편"},
+            "legend": [{"title": "연구 설계", "items": [{"label": "모형", "swatch": "dot", "color": LIGHT["model"]},
+                                                     {"label": "관찰", "swatch": "dot", "color": "#009E73"}]},
+                       {"title": "읽은 범위", "items": [{"label": "본문 확인", "swatch": "full"},
+                                                     {"label": "발췌 확인", "swatch": "half"}]},
+                       {"items": [{"label": "실험 범위", "swatch": "band"}]}]}}
+        page = page_html(spec, "t", "c")
+        head, legend, vis = page.index('class="fhead"'), page.index('class="legend"'), page.index('id="vis"')
+        self.assertTrue(head < legend < vis)
+        self.assertEqual(page.count('class="legend"'), 1)  # one legend row
+        self.assertIn("질문 &lt;i&gt;?", page)
+        self.assertIn('<span class="lg-t">연구 설계</span>', page)
+        self.assertIn('fill="var(--c-model)"', page)  # a themed design colour follows dark mode
+        self.assertIn('fill="#009E73"', page)
+        self.assertIn('fill="var(--c-band)"', page)
+        self.assertIn(f"--c-band: {LIGHT['band']};", page)
+        self.assertIn(f"--c-band: {DARK['band']};", page)
+        self.assertIn("isNarrow()", page)  # the page picks the wide or narrow row layout
+
+    def test_theme_tokens_are_unique(self):
+        self.assertEqual(len(set(LIGHT.values())), len(LIGHT))  # the dark swap is by string
+        self.assertEqual(set(LIGHT), set(DARK))
 
     def test_spec_cannot_break_out_of_script(self):
         page = page_html({"title": "</script><script>alert(1)</script>"}, "t", "c")

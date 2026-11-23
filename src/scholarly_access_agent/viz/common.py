@@ -26,8 +26,15 @@ SCHEMA = "https://vega.github.io/schema/vega-lite/v5.json"
 
 # Light-theme tokens. The page swaps these exact strings for the dark ones when the theme is dark, so the
 # .vl.json next to each page stays a plain, valid light-theme spec.
-LIGHT = {"fg": "#1f2328", "muted": "#59636e", "grid": "#d8dee4", "domain": "#8c959f"}
-DARK = {"fg": "#e6edf3", "muted": "#9198a1", "grid": "#30363d", "domain": "#6e7681"}
+# Every value must be unique within LIGHT (the swap is by string). surface = the report page behind the chart;
+# rule = row separators; band / band_edge = the neutral reference column; model = the design colour that needs a
+# lighter step on the dark surface, where #0072B2 reads dim (the other Okabe-Ito hues stay as they are).
+LIGHT = {"fg": "#1f2328", "muted": "#59636e", "grid": "#d8dee4", "domain": "#8c959f", "surface": "#ffffff",
+         "rule": "#eaeef2", "band": "#eceae4", "band_edge": "#c9c5b9",
+         "model": "#0072B2"}
+DARK = {"fg": "#e6edf3", "muted": "#9198a1", "grid": "#30363d", "domain": "#6e7681", "surface": "#0d1117",
+        "rule": "#21262d", "band": "#262a30", "band_edge": "#4a5059",
+        "model": "#3A93D8"}
 FONT = "Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif"
 
 # Okabe-Ito, shared with the lineage flow map
@@ -35,8 +42,9 @@ DESIGNS = [("model", "모형", "#0072B2"), ("observational", "관찰", "#009E73"
            ("quasi", "준실험", "#E69F00"), ("review", "리뷰", "#CC79A7")]
 UNKNOWN_DESIGN = ("unknown", "미분류", "#999999")
 
-# read depth -> fill opacity (filled / half / hollow); 미확인 is left out of the charts and counted in a note
-ACCESS_STYLE = [(LABEL_BODY, 1.0), (LABEL_EXCERPTS, 0.45), (LABEL_SECONDARY, 0.0), (LABEL_ABSTRACT, 0.0)]
+# read depth -> point fill: full = 본문 확인, half = 발췌 확인, hollow = 인용 맥락만 / 초록만 확인; 미확인 is left out
+# of the charts and counted in a note
+ACCESS_FILL = [(LABEL_BODY, "full"), (LABEL_EXCERPTS, "half"), (LABEL_SECONDARY, "hollow"), (LABEL_ABSTRACT, "hollow")]
 
 
 class VizError(Exception):
@@ -72,35 +80,54 @@ def design_scale(present: Iterable[str]) -> dict:
     return {"domain": [r[1] for r in rows], "range": [r[2] for r in rows]}
 
 
-def access_scale(present: Iterable[str]) -> dict:
+def fill_of(label: str) -> str:
+    return dict(ACCESS_FILL).get(label, "hollow")
+
+
+def access_legend(present: Iterable[str]) -> list[dict]:
+    """Legend items for the read depths present, filled -> hollow; the two hollow labels share one item."""
     present = set(present)
-    rows = [a for a in ACCESS_STYLE if a[0] in present]
-    return {"type": "ordinal", "domain": [r[0] for r in rows], "range": [r[1] for r in rows]}
+    items: list[dict] = []
+    for fill in ("full", "half", "hollow"):
+        names = [a for a, f in ACCESS_FILL if f == fill and a in present]
+        if names:
+            items.append({"label": " · ".join(names), "swatch": fill})
+    return items
 
 
-def access_channel(present: Iterable[str]) -> dict:
-    """fillOpacity encoding: filled = 본문 확인, half = 발췌 확인, hollow = 인용 맥락만 / 초록만 확인.
-
-    Vega-Lite draws no legend for fillOpacity, so the page adds its own key (access_key_html) under the chart
-    and the spec carries the mapping in usermeta.access_key."""
-    scale = access_scale(present)
-    return {"field": "label", "type": "ordinal", "sort": scale["domain"], "scale": scale, "legend": None}
-
-
-def access_key(present: Iterable[str]) -> list[dict]:
-    present = set(present)
-    return [{"label": a, "fill_opacity": o} for a, o in ACCESS_STYLE if a in present]
+SWATCH = {
+    "dot": '<circle cx="7" cy="7" r="5.5" fill="{c}"/>',
+    "full": '<circle cx="7" cy="7" r="5.2" fill="currentColor" stroke="currentColor" stroke-width="1.6"/>',
+    "half": '<circle cx="7" cy="7" r="5.2" fill="none" stroke="currentColor" stroke-width="1.6"/>'
+            '<path d="M7,1.8A5.2,5.2 0 0 0 7,12.2Z" fill="currentColor"/>',
+    "hollow": '<circle cx="7" cy="7" r="5.2" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+    "band": '<rect x="0.5" y="0.5" width="13" height="13" rx="2" fill="var(--c-band)" stroke="var(--c-band_edge)"/>',
+    "arrow": '<path d="M3,3L11,7L3,11Z" fill="currentColor"/>',
+}
 
 
-def access_key_html(items: list[dict], title: str = "읽은 범위") -> str:
-    if not items:
+def legend_html(groups: list[dict]) -> str:
+    """One row of legend chips above the plot: [{title?, items: [{label, swatch, color?}]}]."""
+    out = []
+    for g in groups or []:
+        chips = []
+        for it in g.get("items") or []:
+            c = str(it.get("color") or "currentColor")
+            c = next((f"var(--c-{k})" for k, v in LIGHT.items() if v.lower() == c.lower()), c)  # follows the theme
+            shape = SWATCH.get(it.get("swatch"), SWATCH["dot"]).replace("{c}", html.escape(c))
+            chips.append(f'<span class="chip"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">'
+                         f'{shape}</svg>{html.escape(str(it["label"]))}</span>')
+        if chips:
+            head = f'<span class="lg-t">{html.escape(g["title"])}</span>' if g.get("title") else ""
+            out.append(f'<span class="lg">{head}{"".join(chips)}</span>')
+    return f'<div class="legend" role="list">{"".join(out)}</div>' if out else ""
+
+
+def header_html(head: dict | None) -> str:
+    if not head or not head.get("title"):
         return ""
-    parts = []
-    for it in items:
-        parts.append('<span class="key"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">'
-                     f'<circle cx="6" cy="6" r="4.6" fill="currentColor" fill-opacity="{it["fill_opacity"]}" '
-                     f'stroke="currentColor" stroke-width="1.5"/></svg>{html.escape(it["label"])}</span>')
-    return f'<div class="keys"><b>{html.escape(title)}</b>' + "".join(parts) + "</div>"
+    sub = f'<p class="fsub">{html.escape(head["subtitle"])}</p>' if head.get("subtitle") else ""
+    return f'<header class="fhead"><p class="ftitle">{html.escape(head["title"])}</p>{sub}</header>'
 
 
 def result_label(record_label: str, result: dict) -> str:
@@ -157,20 +184,6 @@ def study_label(record: dict, stem: str = "") -> str:
     return f"{first_author(record, stem)} {year_of(record, stem)}"
 
 
-def wrap_label(text: str, width: float = 9.0) -> str:
-    """Greedy word wrap counting Hangul as 1 and other characters as 0.6; lines joined with newlines."""
-    def w(s: str) -> float:
-        return sum(1.0 if HANGUL.match(c) else 0.6 for c in s)
-
-    lines: list[str] = []
-    for word in text.split():
-        if lines and w(lines[-1] + " " + word) <= width:
-            lines[-1] += " " + word
-        else:
-            lines.append(word)
-    return "\n".join(lines) or text
-
-
 def base_config() -> dict:
     fg, muted, grid, domain = LIGHT["fg"], LIGHT["muted"], LIGHT["grid"], LIGHT["domain"]
     return {
@@ -202,19 +215,23 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
-:root { --fg: __FG__; --muted: __MUTED__; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fg: __DFG__; --muted: __DMUTED__; } }
-:root[data-theme="dark"] { --fg: __DFG__; --muted: __DMUTED__; }
+:root { __LVARS__ }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { __DVARS__ } }
+:root[data-theme="dark"] { __DVARS__ }
 html, body { margin: 0; padding: 0; background: transparent; color: var(--fg); overflow-x: hidden;
   font-family: __FONT__; }
 figure { margin: 0; padding: 4px 2px 2px; max-width: 100%; box-sizing: border-box; }
 #vis { width: 100%; min-width: 0; }
 #vis.vega-embed, #vis .vega-embed { width: 100%; display: block; }
 #vis .vega-embed summary { display: none; }
-.keys { font-size: 11px; color: var(--fg); margin: 2px 4px 0; display: flex; flex-wrap: wrap; gap: 4px 12px;
-  align-items: center; }
-.keys b { font-weight: 600; }
-.key { display: inline-flex; align-items: center; gap: 4px; }
+.fhead { margin: 0 4px 10px; }
+.ftitle { margin: 0; font-size: 17px; line-height: 1.35; font-weight: 650; color: var(--fg); letter-spacing: -0.01em; }
+.fsub { margin: 3px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0 4px 6px; font-size: 12.5px; color: var(--fg); }
+.lg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.lg-t { color: var(--muted); font-weight: 600; }
+.chip { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.chip svg { flex: none; }
 figcaption { font-size: 12px; line-height: 1.45; color: var(--muted); margin: 6px 4px 0; overflow-wrap: anywhere; }
 .err { color: #D55E00; font-size: 13px; }
 </style>
@@ -224,8 +241,10 @@ figcaption { font-size: 12px; line-height: 1.45; color: var(--muted); margin: 6p
 </head>
 <body>
 <figure id="fig">
+__HEAD__
+__LEGEND__
 <div id="vis"></div>
-__KEYS__<figcaption>__CAPTION__</figcaption>
+<figcaption>__CAPTION__</figcaption>
 </figure>
 <script>
 (function () {
@@ -233,7 +252,7 @@ __KEYS__<figcaption>__CAPTION__</figcaption>
   var SPEC = __SPEC__;
   var LIGHT = __LIGHT__, DARK = __DARK__;
   var el = document.getElementById("vis"), fig = document.getElementById("fig");
-  var view = null, lastHeight = -1, lastWidth = -1, timer = null, forced = null;
+  var view = null, lastHeight = -1, lastWidth = -1, lastNarrow = null, timer = null, forced = null;
 
   function parentTheme() {
     try {
@@ -270,7 +289,16 @@ __KEYS__<figcaption>__CAPTION__</figcaption>
       var w = Math.max(220, el.clientWidth - (meta.axisAllowance || 70));
       spec.vconcat.forEach(function (v) { v.width = w; });
     }
+    if (meta.rows) {  // two row layouts (wide / narrow): pick one from this page's width
+      var n = isNarrow();
+      spec.height = n ? meta.rows.narrow_height : meta.rows.height;
+      spec.params = (spec.params || []).map(function (p) { return p.name === "narrow" ? { name: "narrow", value: n } : p; });
+    }
     return spec;
+  }
+  function isNarrow() {
+    var rows = (SPEC.usermeta || {}).rows;
+    return !!rows && el.clientWidth < rows.narrow_below;
   }
   function postHeight(force) {
     var h = Math.ceil(fig.getBoundingClientRect().height) + 4;
@@ -282,9 +310,13 @@ __KEYS__<figcaption>__CAPTION__</figcaption>
   function render() {
     var t = theme();
     document.documentElement.setAttribute("data-chart-theme", t);
-    document.documentElement.style.setProperty("--fg", t === "dark" ? DARK.fg : LIGHT.fg);
-    document.documentElement.style.setProperty("--muted", t === "dark" ? DARK.muted : LIGHT.muted);
+    for (var key in LIGHT) {
+      var v = t === "dark" ? DARK[key] : LIGHT[key];
+      document.documentElement.style.setProperty("--c-" + key, v);
+      if (key === "fg" || key === "muted") document.documentElement.style.setProperty("--" + key, v);
+    }
     lastWidth = el.clientWidth;
+    lastNarrow = isNarrow();
     if (view) { view.finalize(); view = null; }
     return vegaEmbed(el, themed(t === "dark"), {
       actions: false, renderer: "svg", tooltip: { theme: t === "dark" ? "dark" : "light" }
@@ -302,6 +334,7 @@ __KEYS__<figcaption>__CAPTION__</figcaption>
     clearTimeout(timer);
     timer = setTimeout(function () {
       if ((SPEC.usermeta || {}).responsive === "concat" && el.clientWidth !== lastWidth) render();
+      else if (isNarrow() !== lastNarrow) render();
       else postHeight(false);
     }, 150);
   });
@@ -332,19 +365,20 @@ __KEYS__<figcaption>__CAPTION__</figcaption>
 
 
 def page_html(spec: dict, title: str, caption: str) -> str:
-    keys = access_key_html(((spec.get("usermeta") or {}).get("access_key")) or [])
+    meta = spec.get("usermeta") or {}
+
+    def css_vars(tokens: dict) -> str:
+        return " ".join(f"--c-{k}: {v};" for k, v in tokens.items()) + f" --fg: {tokens['fg']}; --muted: {tokens['muted']};"
+
     spec_js = json.dumps(spec, ensure_ascii=False).replace("</", "<\\/")
     repl = {
-        "__TITLE__": html.escape(title), "__CAPTION__": html.escape(caption), "__KEYS__": keys,
-        "__FG__": LIGHT["fg"], "__MUTED__": LIGHT["muted"], "__DFG__": DARK["fg"], "__DMUTED__": DARK["muted"],
+        "__TITLE__": html.escape(title), "__CAPTION__": html.escape(caption), "__HEAD__": header_html(meta.get("header")),
+        "__LEGEND__": legend_html(meta.get("legend") or []), "__LVARS__": css_vars(LIGHT), "__DVARS__": css_vars(DARK),
         "__FONT__": FONT, "__VEGA__": VEGA, "__VEGA_LITE__": VEGA_LITE, "__VEGA_EMBED__": VEGA_EMBED,
         "__LIGHT__": json.dumps(LIGHT), "__DARK__": json.dumps(DARK), "__SPEC__": spec_js,
     }
-    out = PAGE
-    for k in ("__TITLE__", "__KEYS__", "__CAPTION__", "__FG__", "__MUTED__", "__DFG__", "__DMUTED__", "__FONT__", "__VEGA__",
-              "__VEGA_LITE__", "__VEGA_EMBED__", "__LIGHT__", "__DARK__"):
-        out = out.replace(k, repl[k])
-    return out.replace("__SPEC__", repl["__SPEC__"])  # last: the spec may contain any of the tokens above
+    # one pass, so text inside a replacement (a title, the spec) is never itself treated as a token
+    return re.sub(r"__[A-Z]+(?:_[A-Z]+)*__", lambda m: repl.get(m.group(0), m.group(0)), PAGE)
 
 
 def write_chart(spec: dict, out: Path, title: str, caption: str) -> tuple[Path, Path]:

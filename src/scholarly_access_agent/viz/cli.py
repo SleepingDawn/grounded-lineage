@@ -6,17 +6,15 @@ import re
 import sys
 from pathlib import Path
 
-from . import effects, lineage_charts, matrix, novelty
+from . import effects, lineage_charts
 from .common import VizError, today, write_chart
 
 KINDS = {
-    "effects": "Dot-and-whisker of evidence results matching --quantity, coloured by design, filled by read depth.",
-    "matrix": "Gap-matrix heatmap (ideas/matrix.json, else the first table of ideas/matrix.md -> matrix.json).",
-    "novelty": "Per card: closest papers by overlap grade (None..Exact), filled by read depth, verdict at right.",
+    "effects": "Forest plot of evidence results matching --quantity: grouped by design, filled by read depth.",
     "adoption": "Per-year forward-only adoption share from data/adoption.json (latest entry, or --id N).",
     "timeline": "Forward citations by year and the RPYS spectrum with chosen peaks, from data/analysis.json.",
 }
-TITLES = {"effects": "효과 크기", "matrix": "공백 행렬", "novelty": "새로움 판정", "adoption": "방법 채택 비율",
+TITLES = {"effects": "효과 크기", "adoption": "방법 채택 비율",
           "timeline": "인용 시간선"}
 
 
@@ -44,22 +42,18 @@ def parser() -> argparse.ArgumentParser:
             p.add_argument("--unit", help="keep only results in this unit (needed when units are mixed)")
             p.add_argument("--band", type=_band, metavar="LO,HI", help="shaded reference band, e.g. an experiment range")
             p.add_argument("--band-label", help="label for the band")
-            p.add_argument("--sort", choices=("year", "value"), default="year", help="row order (default year)")
+            p.add_argument("--sort", choices=("year", "value"), default="year",
+                           help="row order inside each design group (default year)")
+            p.add_argument("--title", help="chart title (default: a question naming the quantity)")
         if kind == "adoption":
             p.add_argument("--id", help="adoption entry id (3 or adoption#3); default the latest")
-        if kind == "matrix":
-            p.add_argument("--no-write-json", action="store_true",
-                           help="do not write ideas/matrix.json when parsing matrix.md")
     return ap
 
 
 def build(kind: str, topic: Path, a: argparse.Namespace) -> tuple[dict, dict]:
     if kind == "effects":
-        return effects.build(topic, a.quantity, unit=a.unit, band=a.band, band_label=a.band_label, sort=a.sort)
-    if kind == "matrix":
-        return matrix.build(topic, write_json=not a.no_write_json)
-    if kind == "novelty":
-        return novelty.build(topic)
+        return effects.build(topic, a.quantity, unit=a.unit, band=a.band, band_label=a.band_label, sort=a.sort,
+                             title=a.title)
     if kind == "adoption":
         return lineage_charts.build_adoption(topic, a.id)
     return lineage_charts.build_timeline(topic)

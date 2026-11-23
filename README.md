@@ -50,7 +50,7 @@ Evidence records store every reportable number in `results` (value, range, unit,
 
 ## Figures
 
-Reports are HTML first and read online. `lineage page` draws the research flow map; clicking a box opens an evidence panel (version read, derived label, judgments with locators, results), boxes carry read-depth badges and colour-blind-safe design tags, and edge types can be toggled. `lineage page --embed` (written by `report-section`) is the variant a report embeds with `![caption](figs/x.html)` — an auto-sized iframe that follows the report's theme. `scholarly-access-agent viz effects|matrix|novelty|adoption|timeline <topic>` writes Vega-Lite figures (pinned CDN versions) from evidence `results`, the gap matrix, novelty records and lineage data, each with its `.vl.json` spec.
+Reports are HTML first and read online. `lineage page` draws the research flow map; clicking a box opens an evidence panel (version read, derived label, judgments with locators, results), boxes carry read-depth badges and colour-blind-safe design tags, and edge types can be toggled. `lineage page --embed` (written by `report-section`) is the variant a report embeds with `![caption](figs/x.html)` — an auto-sized iframe that follows the report's theme. `scholarly-access-agent viz effects|adoption|timeline <topic>` writes Vega-Lite figures (pinned CDN versions) from evidence `results` and lineage data, each with its `.vl.json` spec.
 
 ## Verify
 

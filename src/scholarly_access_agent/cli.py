@@ -294,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser(
         "viz",
         help="Vega-Lite charts from a topic folder as standalone HTML + .vl.json "
-             "(effects, matrix, novelty, adoption, timeline).",
+             "(effects, adoption, timeline).",
         add_help=False,
     )
     subcommands.add_parser(

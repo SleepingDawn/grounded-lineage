@@ -24,12 +24,10 @@ Authoring: pipe tables only; figures as local PNG/JPG inside the report folder (
 |---|---|---|
 | research flow map (embed variant) | `scholarly-access-agent lineage page --embed` (also written by `lineage report-section`) | `lineage.json` + `evidence/` |
 | effect sizes across studies | `scholarly-access-agent viz effects <topic> --quantity '<regex>' [--unit U] [--band LO,HI]` | `results[]` in evidence records |
-| gap matrix | `scholarly-access-agent viz matrix <topic>` | `ideas/matrix.json` (or `matrix.md`) |
-| novelty overlap per card | `scholarly-access-agent viz novelty <topic>` | `ideas/novelty/*.json` |
 | adoption by year | `scholarly-access-agent viz adoption <topic>` | `data/adoption.json` |
 | citations by year and RPYS | `scholarly-access-agent viz timeline <topic>` | `data/analysis.json` |
 
-Place each figure in the section whose question it answers, with a caption that says what to read from it (e.g. "점이 실험 띠 안에 들어오는 연구").
+Draw a figure only for numbers that are compared (effect sizes, shares over time, counts by year); categorical findings (which cells are empty, which grade a paper got) go in a table. Place each figure in the section whose question it answers, with a caption that says what to read from it (e.g. "점이 실험 띠 안에 들어오는 연구").
 
 Layout (theme in `src/scholarly_access_agent/data/quarto`): one Korean sans family (Pretendard, NanumBarunGothic, Noto Sans KR, Malgun Gothic, first installed; override with `SNU_REPORT_FONT_FAMILY`), about 1.6 line height and a short measure (KRDS-style type, Tufte-style measure); `##` headings with a rule, `###` in the accent colour; quiet tables with a header band, zebra rows and column widths sized to content (the longest token of a column never wraps); one ink and one accent colour, all text at least 4.5:1 contrast. HTML: 17 px body, `word-break: keep-all` for Korean, side table of contents. PDF (Typst): A4, 10.5 pt, title block and page n/N footer. Built-in reportlab PDF (no Quarto): 9.6 pt body, NanumBarunGothic first (`SNU_REPORT_FONT`/`SNU_REPORT_FONT_BOLD`), same palette.
 

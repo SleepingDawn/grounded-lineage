@@ -65,7 +65,7 @@ A card is **recommended** only when all five hold; otherwise its decision is `re
 5. **Next action:** a concrete task (a paper, a calculation, a dataset), not "read more".
 
 ### 8. Report
-`ideas/README.md` in the user's language: the matrix (compact), recommended cards first with evidence numbers `[n]` matching the review's reference list, then `read more` cards with what is missing, then dropped ideas with the reason. Include the overlap table per recommended card, the readiness checks, the model rows used, and estimated vs measured tokens. Render with `render_report_pdf` like the review (HTML by default). File the closest prior-work papers in ReadCube list `snu-research-agent/<Topic>` when its tools are available.
+`ideas/README.md` in the user's language: a short gap table — only the cells that fed a card (cell, state, why it is a gap, card) — then recommended cards first with evidence numbers `[n]` matching the review's reference list, then `read more` cards with what is missing, then dropped ideas with the reason. The full matrix stays in `ideas/matrix.md`, linked, not reproduced. Include the overlap table per recommended card, the readiness checks, the model rows used, and estimated vs measured tokens. Render with `render_report_pdf` like the review (HTML by default). File the closest prior-work papers in ReadCube list `snu-research-agent/<Topic>` when its tools are available.
 
 ## After the report (only when the user asks or accepts)
 
