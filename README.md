@@ -14,6 +14,36 @@ Each investigation lives in its own folder under the research root (`SNU_RESEARC
 
 ## Quick start
 
+**One command** (needs only git; installs [uv](https://docs.astral.sh/uv/), which brings Python 3.12):
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/SleepingDawn/grounded-lineage/main/install.ps1 | iex
+```
+
+```sh
+# macOS / Linux
+curl -LsSf https://raw.githubusercontent.com/SleepingDawn/grounded-lineage/main/install.sh | sh
+```
+
+It clones into `~/.local/share/research-tools/grounded-lineage` (`GL_ROOT` or `--root` to change; from a clone, `install.ps1` / `sh install.sh` use that clone), then:
+
+1. builds the venv, installs the package and Playwright Chromium, and installs the four skills;
+2. installs a portable Quarto for HTML reports if none is found (release hash checked; `QUARTO_PATH` saved on Windows);
+3. optionally sets up ReadCube filing (below);
+4. registers the `snu-library` (and `readcube`) MCP servers in `~/.claude.json`, and in `~/.codex/config.toml` when Codex is installed, backing up a config before changing it;
+5. asks for an optional OpenAlex API key (hidden input; Windows user variable, or your shell rc on macOS/Linux);
+6. opens the SNU sign-in window when there is no session (you sign in yourself; on Windows an installed Chrome/Edge is used first) and checks one subscription PDF download;
+7. signs in to ReadCube and verifies its writes, if set up.
+
+On Linux, Korean reports need a Korean font (e.g. `sudo apt install fonts-noto-cjk`), and headless Chromium may need `sudo .venv/bin/python -m playwright install-deps chromium`; the installer warns when Chromium does not start. Signing in to SNU needs a desktop session.
+
+Every step checks before acting, so rerun the same command after a session expires or to repair an install. Options (after `install.ps1`, in `$env:GL_INSTALL_ARGS` for the `irm | iex` form, or after `sh -s --`): `--readcube` / `--no-readcube`, `--non-interactive` (install and check only), `--update` (also update readcube-mcp), `--no-register` (leave skills and client configs alone).
+
+**ReadCube filing (optional).** Uses the unofficial [Zhilin0001/readcube-mcp](https://github.com/Zhilin0001/readcube-mcp), pinned to a reviewed commit, with its own venv in `<root>/readcube-mcp`. It needs a ReadCube email + password account (no SSO/MFA); its sign-in prompts are in Chinese (邮箱 email, 密码 password). Its write tools only work after a session-bound verification: the installer offers to run it in a private test collection `grounded-lineage verify <date>` and empties it afterwards; delete the empty collection in the ReadCube app. Signing in again voids the verification (rerun the installer). Do not run `login_local.py --check` by hand: it saves rotated cookies, which also voids it.
+
+**Manual install:**
+
 ```sh
 git clone https://github.com/SleepingDawn/grounded-lineage.git
 cd grounded-lineage
@@ -38,7 +68,7 @@ Restart clients after changing tools.
 
 **HTML reports** need [Quarto](https://quarto.org) (bundles Pandoc and Typst; set `QUARTO_PATH` if it is not on PATH). Without it, `render-report` falls back to a built-in reportlab PDF and reports `quarto_unavailable`.
 
-**SNU sign-in:** run `scripts/서울대 로그인.command` for user-assisted sign-in. Passwords are never loaded or auto-entered; session files stay outside the repo, owner-only and unencrypted. Routine research is headless; only session renewal opens a window. Optional: `OPENALEX_API_KEY` raises the OpenAlex quota (read from the environment and the Windows user variable, never printed).
+**SNU sign-in:** rerun the installer, or run `scripts/서울대 로그인.command` (macOS) for user-assisted sign-in. On Windows, if the visible window does not open with the bundled Chromium (application control can block it), add `--browser-channel chrome` (or `msedge`) to `scholarly-access-agent open-url <URL> --wait-for-login --headless false`. Passwords are never loaded or auto-entered; session files stay outside the repo, owner-only and unencrypted. Routine research is headless; only session renewal opens a window. Optional: `OPENALEX_API_KEY` raises the OpenAlex quota (read from the environment and the Windows user variable, never printed).
 
 ## Skills
 

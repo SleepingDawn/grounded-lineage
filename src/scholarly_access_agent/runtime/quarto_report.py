@@ -31,6 +31,12 @@ QUARTO_CANDIDATES = [
     Path.home() / "AppData/Local/Programs/Quarto/bin/quarto.exe",
     Path("/Applications/quarto/bin/quarto"),
     Path("/opt/quarto/bin/quarto"),
+    # Where install.ps1 / install.sh put a portable Quarto: next to this repository
+    # (editable install, any --root), else the default root.
+    Path(__file__).resolve().parents[4] / "quarto/bin/quarto.exe",
+    Path(__file__).resolve().parents[4] / "quarto/bin/quarto",
+    Path.home() / ".local/share/research-tools/quarto/bin/quarto.exe",
+    Path.home() / ".local/share/research-tools/quarto/bin/quarto",
 ]
 
 
