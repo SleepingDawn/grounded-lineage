@@ -136,8 +136,10 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(found, [("warning", "number_not_in_record")])
 
     def test_range_decimal_and_tolerance(self):
-        found, _ = self.rules("MFP spans 14–24 nm and κ ≈ 1.41 ± 2.1 [@larkin2014]. Also −1.400 [@larkin2014].\n")
+        found, _ = self.rules("MFP spans 14–24 nm and κ ≈ 1.41 ± 2.1 [@larkin2014]. Also 1.400 [@larkin2014].\n")
         self.assertEqual(found, [])
+        found, _ = self.rules("A shift of −1.400 [@larkin2014].\n")  # the record has +1.4, not −1.4
+        self.assertEqual(found, [("warning", "number_not_in_record")])
         found, _ = self.rules("κ ≈ 1.45 [@larkin2014].\n")
         self.assertEqual(found, [("warning", "number_not_in_record")])
 
@@ -240,3 +242,39 @@ class VerifyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SignAndPowerTests(unittest.TestCase):
+    def test_signs_kept_and_not_confused_with_ranges_or_names(self):
+        from scholarly_access_agent.trace import number_tokens
+        self.assertEqual([v for _, v in number_tokens("κ는 −0.5 W/mK")], [-0.5])
+        self.assertEqual([v for _, v in number_tokens("= -2.1")], [-2.1])
+        self.assertEqual([v for _, v in number_tokens("14–24%")], [14.0, 24.0])
+        self.assertEqual([v for _, v in number_tokens("MACE-MP-0")], [0.0])
+
+    def test_powers_of_ten(self):
+        from scholarly_access_agent.trace import number_tokens
+        cases = {"1.2×10⁻³": 1.2e-3, "1.2 × 10^-3": 1.2e-3, "1.2 x 10**-3": 1.2e-3, "2.5e-4": 2.5e-4,
+                 "3x10^5": 3e5, "1.2×10-3": 1.2e-3, "10^-3": 1e-3, "10⁻⁶": 1e-6, "−4.0×10⁻²": -4e-2}
+        for text, expected in cases.items():
+            vals = [v for _, v in number_tokens(text)]
+            self.assertEqual(len(vals), 1, (text, vals))
+            self.assertAlmostEqual(vals[0], expected, places=12, msg=text)
+        self.assertEqual([v for _, v in number_tokens("2 x 10 nm")], [2.0, 10.0])
+
+    def test_values_match_respects_sign_and_tolerance(self):
+        from scholarly_access_agent.trace import values_match
+        self.assertFalse(values_match("-0.5", -0.5, 0.5))
+        self.assertTrue(values_match("1.2×10⁻³", 1.2e-3, 1.205e-3))
+        self.assertFalse(values_match("1.2×10⁻³", 1.2e-3, 1.2e-2))
+        self.assertTrue(values_match("3", 3.0, 3.0))
+
+    def test_trace_flags_wrong_sign_and_wrong_power(self):
+        from scholarly_access_agent.trace import trace_text
+        records = {"a2020": {"title": "A", "year": 2020, "results": [
+            {"id": "d", "quantity": "D", "value": "1.2e-3", "unit": "cm2/s", "pdf_page": 3},
+            {"id": "s", "quantity": "shift", "value": -0.5, "unit": "eV", "pdf_page": 4}]}}
+        ok = trace_text("확산계수는 1.2×10⁻³ cm²/s이고 이동은 −0.5 eV이다 [@a2020].\n", records)
+        self.assertEqual([f["rule"] for f in ok["findings"]], [])
+        bad = trace_text("확산계수는 1.2×10⁻² cm²/s이고 이동은 0.5 eV이다 [@a2020].\n", records)
+        self.assertEqual(sorted(f["rule"] for f in bad["findings"]), ["number_not_in_record", "number_not_in_record"])

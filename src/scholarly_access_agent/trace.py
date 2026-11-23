@@ -34,9 +34,7 @@ HANGUL = re.compile(r"[가-힣]")
 ABBREVIATIONS = ("al.", "e.g.", "i.e.", "fig.", "figs.", "eq.", "eqs.", "ref.", "refs.", "vs.", "cf.",
                  "approx.", "ca.", "no.", "vol.", "sec.", "p.", "pp.", "ch.", "et.")
 
-# Numbers: ints, decimals, thousands, percentages; ranges and ± split into their two ends.
-NUMBER = re.compile(r"(?<![A-Za-z0-9_.,])(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?")
-LOOSE_NUMBER = re.compile(r"(\d{1,3}(?:,\d{3})+(?![\d])|\d+)(\.\d+)?")
+# Numbers are parsed by number_tokens() below (sign, decimals, thousands, powers of ten).
 NOT_A_VALUE = re.compile(
     r"(?:\b(?:Fig(?:ure)?s?|Tables?|Eqs?|Equations?|Sec(?:tion)?s?|Refs?|Chapter|Ch|No|Vol|pp?)\.?|"
     r"그림|표|식|§)\s*\d+(?:\.\d+)*[A-Za-z]?(?:\s*[-–]\s*\d+)?", re.I)
@@ -294,21 +292,76 @@ def citation_pass(markdown_path: str | Path, text: str) -> tuple[str, list[str]]
 
 # ---------------------------------------------------------------- numbers
 
+_SUPERSCRIPT = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺", "0123456789-+")
+_MINUS = "-−‐‑–"  # hyphen, minus sign, hyphens and en dash used as a minus before a number
+# A sign counts only when it does not follow a digit, letter, closing bracket or decimal point:
+# "−0.5", "(−3", "= -2" are negative; "14–24" (range) and "MACE-MP-0" (name) are not.
+_SIGN = r"(?P<sign>(?<![\w.,)\]])[" + _MINUS + r"+])?"
+_EXPONENT = (r"(?:[eE](?P<e1>[" + _MINUS + r"+]?\d+)"                       # 1.2e-3
+             r"|\s*[×x·*]\s*10\s*(?:\^|\*\*)\s*(?P<e2>[" + _MINUS + r"+]?\d+)"  # 1.2 × 10^-3
+             r"|\s*[×x·*]\s*10(?P<e3>[⁻⁺]?[⁰¹²³⁴⁵⁶⁷⁸⁹]+)"                      # 1.2×10⁻³
+             r"|\s*[×x·*]\s*10(?P<e4>[" + _MINUS + r"]\d+))?")                   # 1.2×10-3 (plain text)
+SCI_NUMBER = re.compile(_SIGN + r"(?<![A-Za-z0-9_.,])(?P<mant>\d{1,3}(?:,\d{3})+|\d+)(?P<frac>\.\d+)?" + _EXPONENT)
+LOOSE_SCI_NUMBER = re.compile(_SIGN + r"(?P<mant>\d{1,3}(?:,\d{3})+(?![\d])|\d+)(?P<frac>\.\d+)?" + _EXPONENT)
+# A bare power of ten: 10^-3, 10**-3, 10⁻³.
+_BARE_POWER = re.compile(r"\s*(?:(?:\^|\*\*)\s*(?P<p1>[" + _MINUS + r"+]?\d+)|(?P<p2>[⁻⁺]?[⁰¹²³⁴⁵⁶⁷⁸⁹]+))")
+
+
+def _exponent(text: str | None) -> int | None:
+    if not text:
+        return None
+    text = text.translate(_SUPERSCRIPT)
+    for ch in _MINUS:
+        text = text.replace(ch, "-")
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
 def number_tokens(text: str, strict: bool = True) -> list[tuple[str, float]]:
-    """(as written, value) for each number; signs dropped, ranges and ± give both ends."""
+    """(as written, value) for each number, keeping its sign and any power of ten.
+
+    Ranges ("14–24") and ± give both ends; "1.2×10⁻³", "1.2 × 10^-3", "1.2e-3" and a bare
+    "10^-3" are read as one value."""
     out = []
-    for match in (NUMBER if strict else LOOSE_NUMBER).finditer(text):
-        raw = match.group(1) + (match.group(2) or "")
+    pattern = SCI_NUMBER if strict else LOOSE_SCI_NUMBER
+    pos = 0
+    while True:
+        match = pattern.search(text, pos)
+        if not match:
+            break
+        pos = match.end()
+        mant = match.group("mant")
+        frac = match.group("frac") or ""
+        raw = match.group(0).strip()
         try:
-            out.append((raw, float(raw.replace(",", ""))))
+            value = float(mant.replace(",", "") + frac)
         except ValueError:
             continue
+        exp = _exponent(match.group("e1") or match.group("e2") or match.group("e3") or match.group("e4"))
+        if exp is None and mant == "10" and not frac:
+            power = _BARE_POWER.match(text, match.end())
+            if power:
+                exp = _exponent(power.group("p1") or power.group("p2"))
+                if exp is not None:
+                    value, raw = 1.0, raw + power.group(0).strip()
+                    pos = power.end()
+        if exp is not None:
+            value *= 10.0 ** exp
+        if match.group("sign") and match.group("sign") != "+":
+            value = -value
+        out.append((raw, value))
     return out
 
 
 def values_match(written: str, value: float, candidate: float) -> bool:
-    if "." in written:
-        return abs(value - candidate) <= 0.01 * max(abs(value), abs(candidate)) + 1e-12
+    """Same sign; exact for integers, within 1% for decimals and powers of ten."""
+    if (value < 0) != (candidate < 0) and value != 0 and candidate != 0:
+        return False
+    if "." in written or any(m in written for m in ("e", "E", "×", "^", "x", "·", "*")) \
+            or any(ch in written for ch in "⁰¹²³⁴⁵⁶⁷⁸⁹"):
+        return abs(value - candidate) <= 0.01 * max(abs(value), abs(candidate)) + 1e-300
     return value == candidate
 
 
