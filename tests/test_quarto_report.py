@@ -161,3 +161,26 @@ class QuartoRenderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CleanupFailureTests(unittest.TestCase):
+    def test_cleanup_only_failure_is_recognised(self):
+        stderr = ("ERROR: Os error 32\n    at safeRemoveDirSync (file:///quarto.js:1:1)\n"
+                  "    at renderCleanup (file:///quarto.js:2:2)\n")
+        self.assertTrue(qr._cleanup_only(stderr))
+        self.assertFalse(qr._cleanup_only("ERROR: pandoc failed\n    at render (file:///quarto.js:3:3)"))
+
+    def test_output_kept_when_only_cleanup_fails(self):
+        with tempfile.TemporaryDirectory() as root:
+            md = Path(root) / "r.md"
+            md.write_text("# T\n\nbody\n", encoding="utf-8")
+
+            def fake_run(quarto, qmd, to):
+                (qmd.parent / (qmd.name[:-4] + ".html")).write_text("<html>ok</html>", encoding="utf-8")
+                return mock.Mock(returncode=1, stderr="at safeRemoveDirSync\nat renderCleanup")
+
+            with mock.patch.object(qr, "_run", fake_run), mock.patch.object(qr, "pick_font", return_value=None):
+                out = qr.render_with_quarto(md, Path(root) / "r.html", "quarto", ("html",))
+            self.assertTrue(out["ok"])
+            self.assertTrue((Path(root) / "r.html").is_file())
+            self.assertTrue(any(w.startswith("quarto_cleanup_failed") for w in out["warnings"]))

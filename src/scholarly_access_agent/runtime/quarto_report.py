@@ -246,6 +246,11 @@ def _run(quarto: str, qmd: Path, to: str) -> subprocess.CompletedProcess:
                           text=True, encoding="utf-8", errors="replace", timeout=600)
 
 
+def _cleanup_only(stderr: str) -> bool:
+    """True when Quarto's only failure is removing its own temporary folder after rendering."""
+    return "renderCleanup" in stderr and "safeRemoveDirSync" in stderr
+
+
 def _problems(stderr: str) -> list[str]:
     return [f"quarto: {line.strip()[:200]}" for line in stderr.splitlines()
             if re.search(r"\b(warning|error)\b", line, re.I) and "WARN: Unable to resolve" not in line]
@@ -299,7 +304,11 @@ def render_with_quarto(source: Path, base: Path, quarto: str, formats: tuple[str
             if fmt not in formats:
                 continue
             run = _run(quarto, work[qmd], to)
-            if run.returncode != 0 or not produced[fmt].is_file():
+            if run.returncode != 0 and produced[fmt].is_file() and _cleanup_only(run.stderr):
+                # Quarto wrote the output but could not delete its temporary folder (Dropbox or
+                # antivirus holding it on Windows); the finally block below removes it instead.
+                warnings.append("quarto_cleanup_failed: temporary folder removed afterwards")
+            elif run.returncode != 0 or not produced[fmt].is_file():
                 return {"ok": False, "status": "render_failed", "engine": "quarto", "format": fmt,
                         "reason": "\n".join(run.stderr.strip().splitlines()[-8:])}
             os.replace(produced[fmt], targets[fmt])

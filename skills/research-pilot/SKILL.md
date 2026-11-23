@@ -63,6 +63,14 @@ In Claude Code use AskUserQuestion with the recommendation first; elsewhere a nu
 
 Every sub-agent's brief begins: "Read <path>/worker.md before anything else.", where `<path>` is the absolute directory this SKILL.md was loaded from (the skill's base directory). Then the task, the role's model and effort (passed explicitly), file paths rather than pasted text, and the output shape. See [worker.md](worker.md).
 
+## Fresh session
+
+The main agent's every tool call re-reads the session's whole context. When a run would start in a session already holding a long conversation (over ~100k tokens of context), say once that the same run costs several times less in a fresh session, offer to continue there (with the topic folder and settings it needs), and continue here if the user prefers.
+
+## Judge steps in the main agent
+
+When the session runs on the `judge` row's model or stronger (Opus), the main agent may do `judge` work itself (verdicts, ranking, feasibility, critique) instead of spawning a sub-agent; record it under the same stage and say so in the method note.
+
 ## Budget
 
 Estimate before spending, measure each stage, shrink before exceeding: [references/cost.md](references/cost.md). The estimate is shown at checkpoint ①; spent vs remaining at checkpoint ② and in the report.
