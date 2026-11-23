@@ -14,6 +14,10 @@
         labs = [...svg.querySelectorAll('.elab')], answers = [...svg.querySelectorAll('.ans')];
   const byId = {}; nodes.forEach(n => { byId[n.dataset.id] = n; });
   let laneSel = null, sel = null, opener = null;
+  const wrapEl = document.getElementById('wrap') || document.querySelector('.wrap');
+  const lv = document.getElementById('lv'), lvBoxes = lv ? [...lv.querySelectorAll('.lvb')] : [];
+  const mq = window.matchMedia ? window.matchMedia('(max-width: ' + (CFG.narrow - 0.02) + 'px)') : {matches: false};
+  function lvOn(){ return !!(lv && wrapEl && wrapEl.classList.contains('lv-on')); }
 
   // ------------------------------------------------------------ highlight
   function clear(){ svg.classList.remove('focus');
@@ -78,7 +82,7 @@
   function nodeItem(id){ const d = N[id]; const li = el('li'), b = el('button');
     b.type = 'button'; b.append(d.lab ? badge(d.lab) : el('span'), el('span', '', d.box + (d.sub ? ' (' + d.sub + ')' : '')));
     b.append(el('span', 's', [d.y, d.dz, d.lab].filter(Boolean).join(' · ')));
-    b.addEventListener('click', () => openNode(id, byId[id]));
+    b.addEventListener('click', () => openNode(id, boxFor(id)));
     li.append(b); return li; }
   function show(from){ opener = from || null; panel.hidden = false; place(from);
     pt.focus({preventScroll: true}); post(); }
@@ -89,7 +93,8 @@
     panel.style.top = Math.max(0, Math.min(r.top - sr.top - 8, stage.offsetHeight - 120)) + 'px';
     const leftSide = (r.left + r.right) / 2 - sr.left > sr.width - 420;
     panel.style.left = leftSide ? '8px' : 'auto'; panel.style.right = leftSide ? 'auto' : '8px'; }
-  function select(id){ sel = id; nodes.forEach(n => n.classList.toggle('sel', n.dataset.id === id)); lineage(id); }
+  function select(id){ sel = id; nodes.forEach(n => n.classList.toggle('sel', n.dataset.id === id));
+    lvBoxes.forEach(b => b.classList.toggle('sel', b.dataset.id === id)); lineage(id); }
   function openNode(id, from){ const d = N[id], r = d.rec; hideTip(); select(id);
     pb.textContent = '';
     if (d.ev){ head(d.lane); pt.textContent = d.box + ' (' + d.y + ')';
@@ -140,7 +145,7 @@
     const ul = el('ul', 'lanelist'); ids.forEach(k => ul.append(nodeItem(k))); pb.append(ul);
     show(from); }
   function closePanel(){ if (panel.hidden) return; panel.hidden = true; sel = null;
-    nodes.forEach(n => n.classList.remove('sel')); applyLane();
+    nodes.forEach(n => n.classList.remove('sel')); lvBoxes.forEach(b => b.classList.remove('sel')); applyLane();
     if (opener && document.contains(opener)) opener.focus({preventScroll: true}); opener = null; post(); }
   document.getElementById('px').addEventListener('click', closePanel);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
@@ -162,14 +167,14 @@
   svg.addEventListener('click', () => closePanel());
 
   // ------------------------------------------------------------ lane, edge-type and view controls
-  function syncLaneButtons(){ document.querySelectorAll('.lanebtn[data-lane]').forEach(x => x.setAttribute('aria-pressed',
+  function syncLaneButtons(){ document.querySelectorAll('.controls .lanebtn[data-lane]').forEach(x => x.setAttribute('aria-pressed',
       String(x.dataset.lane === 'all' ? laneSel === null : +x.dataset.lane === laneSel))); }
-  document.querySelectorAll('.lanebtn[data-lane]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.controls .lanebtn[data-lane]').forEach(b => b.addEventListener('click', () => {
     const v = b.dataset.lane === 'all' ? null : +b.dataset.lane;
     laneSel = (laneSel === v) ? null : v; syncLaneButtons(); if (!sel) applyLane(); }));
   document.querySelectorAll('.edgebtn').forEach(b => b.addEventListener('click', () => {
     const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', String(on));
-    svg.classList.toggle('hide-' + b.dataset.etype, !on); }));
+    svg.classList.toggle('hide-' + b.dataset.etype, !on); if (lv) lv.classList.toggle('hide-' + b.dataset.etype, !on); }));
   const shortBtn = document.getElementById('shortbtn');
   if (shortBtn) shortBtn.addEventListener('click', () => { const on = shortBtn.getAttribute('aria-pressed') !== 'true';
     shortBtn.setAttribute('aria-pressed', String(on)); svg.classList.toggle('shorten', on); });
@@ -188,6 +193,94 @@
   sc.addEventListener('scroll', stickX, {passive: true});
   window.addEventListener('scroll', stickY, {passive: true});
   window.addEventListener('resize', () => { stickX(); stickY(); });
+
+  // ------------------------------------------------------------ phones: sideways-scroll cue on the full map
+  const hint = document.getElementById('scrollhint'); let scrolled = false;
+  function cue(){ const on = mq.matches && !lvOn(), over = sc.scrollWidth > sc.clientWidth + 2;
+    stage.classList.toggle('cue', on && over && sc.scrollLeft + sc.clientWidth < sc.scrollWidth - 4);
+    if (hint) { const h = !(on && over && !scrolled); if (hint.hidden !== h) { hint.hidden = h; post(); } } }
+  sc.addEventListener('scroll', () => { if (sc.scrollLeft > 4) scrolled = true; cue(); }, {passive: true});
+
+  // ------------------------------------------------------------ phones: one lane at a time (tabs, swipe, stubs)
+  const tabs = lv ? [...lv.querySelectorAll('.lvtab')] : [], panes = lv ? [...lv.querySelectorAll('.lvp')] : [];
+  const lvBtn = document.getElementById('lvbtn');
+  let lvPref = null, cur = tabs.length ? +tabs[0].dataset.lane : null;
+  function pane(){ return panes.find(p => +p.dataset.lane === cur); }
+  function boxFor(id){ if (!lvOn()) return byId[id];
+    const d = N[id]; if (!d.ev && d.lane !== cur && panes.some(p => +p.dataset.lane === d.lane)) showLane(d.lane);
+    const p = pane(); return (p && p.querySelector('.lvb[data-id="' + CSS.escape(id) + '"]')) || byId[id]; }
+  function curve(p0, c1, c2, p3){ return 'M' + p0 + ' C' + c1 + ' ' + c2 + ' ' + p3; }
+  function draw(p){ if (!p || p.hidden || !lvOn()) return;
+    const g = p.querySelector('.lvg'), ov = p.querySelector('.lve'), layer = ov.querySelector('g');
+    const base = g.getBoundingClientRect(), L = +p.dataset.lane;
+    ov.setAttribute('viewBox', '0 0 ' + base.width.toFixed(1) + ' ' + base.height.toFixed(1));
+    const R = el_ => { const r = el_.getBoundingClientRect();
+      return {l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top,
+              cx: (r.left + r.right) / 2 - base.left, cy: (r.top + r.bottom) / 2 - base.top}; };
+    const boxes = {}; p.querySelectorAll('.lvn').forEach(n => { boxes[n.dataset.id] = {n: R(n), b: R(n.querySelector('.lvb'))}; });
+    let s = '';
+    E.forEach(([a, b], k) => { const A = boxes[a], B = boxes[b]; if (!A || !B) return;
+      const t = CFG.et[k], cls = {s: 'e', d: 'e dash', m: 'e main', e: 'e ev', x: 'e dis'}[t] || 'e';
+      const mk = t === 'x' ? '' : ' marker-end="url(#lv' + ({m: 'arm', e: 'are'}[t] || 'ar') + L + ')"';
+      let p0, c1, c2, p3;
+      if (Math.abs(A.b.cx - B.b.cx) > 4){                  // across columns (a study evaluating an event)
+        const left = B.b.cx < A.b.cx, x1 = left ? A.b.l : A.b.r, x2 = left ? B.b.r : B.b.l, xm = (x1 + x2) / 2;
+        p0 = [x1, A.b.cy]; c1 = [xm, A.b.cy]; c2 = [xm, B.b.cy]; p3 = [x2, B.b.cy];
+      } else { const down = B.n.t >= A.n.b - 1;
+        const between = down && Object.keys(boxes).some(id => id !== a && id !== b && Math.abs(boxes[id].b.cx - A.b.cx) < 4
+          && boxes[id].n.t > A.n.b - 1 && boxes[id].n.b < B.n.t + 1);
+        if (down && !between){ const dy = Math.max(10, (B.n.t - A.n.b) / 2);
+          p0 = [A.b.cx, A.n.b]; c1 = [A.b.cx, A.n.b + dy]; c2 = [B.b.cx, B.n.t - dy]; p3 = [B.b.cx, B.n.t];
+        } else { const x = Math.max(A.b.r, B.b.r);           // bow out along the column's right gutter
+          p0 = [A.b.r, A.b.cy]; c1 = [x + 18, A.b.cy]; c2 = [x + 18, B.b.cy]; p3 = [B.b.r, B.b.cy]; } }
+      const f = v => v.map(z => z.toFixed(1)).join(',');
+      s += '<path d="' + curve(f(p0), f(c1), f(c2), f(p3)) + '" class="' + cls + '" data-type="' + t + '"' + mk + '/>';
+      if (t === 'x'){ const mx = (p0[0] + 3 * c1[0] + 3 * c2[0] + p3[0]) / 8, my = (p0[1] + 3 * c1[1] + 3 * c2[1] + p3[1]) / 8;
+        s += '<g data-type="x"><circle cx="' + mx.toFixed(1) + '" cy="' + my.toFixed(1) + '" r="6" class="xmk"/><text x="' + mx.toFixed(1)
+          + '" y="' + my.toFixed(1) + '" class="xmk-t" style="font-size:10px">≠</text></g>'; } });
+    layer.innerHTML = s; }
+  function showLane(i, focusTab){ if (!panes.length) return;
+    if (!panes.some(p => +p.dataset.lane === i)) return;
+    cur = i; tabs.forEach(t => { const on = +t.dataset.lane === i; t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1; if (on && focusTab) t.focus(); });
+    panes.forEach(p => { p.hidden = +p.dataset.lane !== i; });
+    draw(pane()); post(); }
+  function step(d){ const k = tabs.findIndex(t => +t.dataset.lane === cur), n = tabs.length;
+    if (n > 1) showLane(+tabs[(k + d + n) % n].dataset.lane, false); }
+  function setMode(){ if (!lv || !wrapEl) return;
+    const on = mq.matches && (lvPref === null ? !!CFG.lv : lvPref);
+    if (on !== lvOn() && !panel.hidden) closePanel();
+    wrapEl.classList.toggle('lv-on', on);
+    if (lvBtn) lvBtn.setAttribute('aria-pressed', String(mq.matches ? on : (lvPref === null ? !!CFG.lv : lvPref)));
+    if (on) draw(pane()); cue(); stickX(); post(); }
+  if (lv){
+    tabs.forEach((t, k) => { t.addEventListener('click', () => showLane(+t.dataset.lane, false));
+      t.addEventListener('keydown', e => { const d = {ArrowRight: 1, ArrowLeft: -1}[e.key];
+        if (d){ e.preventDefault(); const n = tabs.length; showLane(+tabs[(k + d + n) % n].dataset.lane, true); }
+        else if (e.key === 'Home' || e.key === 'End'){ e.preventDefault();
+          showLane(+tabs[e.key === 'Home' ? 0 : tabs.length - 1].dataset.lane, true); } }); });
+    lvBoxes.forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openNode(b.dataset.id, b); }));
+    lv.querySelectorAll('.stub').forEach(b => b.addEventListener('click', e => { e.stopPropagation();
+      showLane(+b.dataset.lane, false); const p = pane(), x = p && p.querySelector('.lvb[data-id="' + CSS.escape(b.dataset.to) + '"]');
+      if (x){ x.focus({preventScroll: true}); x.classList.remove('flash'); void x.offsetWidth; x.classList.add('flash'); } }));
+    lv.querySelectorAll('.lvans').forEach(a => { a.tabIndex = 0; a.setAttribute('role', 'button');
+      a.setAttribute('aria-label', '지금의 답: ' + laneName(+a.dataset.lane) + '. 눌러서 연구 목록 보기');
+      a.addEventListener('click', e => { e.stopPropagation(); openLane(+a.dataset.lane, a); });
+      a.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLane(+a.dataset.lane, a); } }); });
+    lv.addEventListener('click', () => closePanel());
+    const sw = lv.querySelector('.lvpanes'); let x0 = null, y0 = 0;
+    sw.addEventListener('touchstart', e => { if (e.touches.length !== 1) { x0 = null; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, {passive: true});
+    sw.addEventListener('touchend', e => { if (x0 === null) return; const t = e.changedTouches[0];
+      const dx = t.clientX - x0, dy = t.clientY - y0; x0 = null;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > 1.6 * Math.abs(dy)) step(dx < 0 ? 1 : -1); }, {passive: true});
+    if (lvBtn) lvBtn.addEventListener('click', () => { lvPref = !lvOn(); setMode(); });
+    if (mq.addEventListener) mq.addEventListener('change', setMode); else if (mq.addListener) mq.addListener(setMode);
+    if (window.ResizeObserver) new ResizeObserver(() => draw(pane())).observe(lv);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => draw(pane()));
+  }
+  setMode(); cue();
+  window.addEventListener('resize', cue);
 
   // ------------------------------------------------------------ embed: report frame height and theme
   function post(){ if (!framed) return;

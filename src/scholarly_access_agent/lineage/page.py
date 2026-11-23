@@ -1224,8 +1224,167 @@ def view_controls(L):
                  f'title="{LONG_SPAN}년 넘게 이어지는 연결을 흐리게 그리고 시작점에 대상 이름을 붙임">긴 연결 줄이기</button>')
     b.append('<button type="button" class="lanebtn optbtn" id="fitbtn" aria-pressed="false" '
              'title="지도를 화면 너비에 맞춰 줄이기">화면 맞춤</button>')
+    # phones only (CSS shows it below NARROW_PX): one lane at a time instead of the sideways-scrolling map
+    one = "한 질문씩 보기" if mode(L) == "topic" else "한 갈래씩 보기"
+    b.append(f'<button type="button" class="lanebtn optbtn narrow-only" id="lvbtn" '
+             f'aria-pressed="{str(lane_view_default(L)).lower()}" aria-controls="lv" '
+             f'title="좁은 화면에서 한 열씩 화면 너비로 보기">{one}</button>')
     return ('<div class="controls" role="group" aria-label="연결선과 보기"><span class="lab">연결선</span>'
             + "".join(b) + "</div>")
+
+
+# ---------------------------------------------------------------- narrow screens: one lane at a time
+NARROW_PX = 640    # below this width (the frame's, inside a report) the map switches to the lane view
+LV_LANES = 4       # lineage mode: the lane view is the phone default above this many study lanes
+
+
+def lane_view_default(L):
+    """Whether phones open on the lane view: always in topic mode, in lineage mode above LV_LANES lanes."""
+    if mode(L) == "topic":
+        return True
+    return sum(1 for ln in L["lanes"] if not is_events_lane(ln)) > LV_LANES
+
+
+def lane_short(L, i, qn=None):
+    """Tab and stub name of a lane: 'Q2 가격 설계' in topic mode (Q-number + short label), else the label."""
+    qn = question_numbers(L) if qn is None else qn
+    ln = L["lanes"][i]
+    lab = ln.get("label")
+    lab = " ".join(x for x in lab if x).replace("· ", "·") if isinstance(lab, list) else (lab or "")
+    if i in qn:
+        return f"Q{qn[i]}" + (f" {lab}" if lab else "")
+    return lab or lane_name(ln)
+
+
+def _badge_icon(kind):
+    return (f'<svg class="lvbdg" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">'
+            f'{badge_svg(kind, 6, 6)}</svg>') if kind else ""
+
+
+def lane_view(L, links, ev=None):
+    """The phone view (hidden on wide screens): tabs, one pane per study lane with the events lane beside it,
+    year rows shared by the two columns, boxes as buttons (same panel as the map), edges drawn over the grid
+    by the script, cross-lane edges as '→ Q2 · 제목' stubs that switch the tab, and the answer cell."""
+    lanes, nodes = L["lanes"], L["nodes"]
+    topic = mode(L) == "topic"
+    qn = question_numbers(L) if topic else {}
+    labels = node_labels(L, ev)
+    by = {n["id"]: n for n in nodes}
+    evl = next((i for i, ln in enumerate(lanes) if is_events_lane(ln)), None)
+    study = [i for i in range(len(lanes)) if i != evl]
+    if not study:
+        return ""
+    edges = edge_list(L)
+    tabs, panes = [], []
+    for k, i in enumerate(study):
+        sel = k == 0
+        tabs.append(f'<button type="button" role="tab" class="lanebtn lvtab" id="lvt{i}" data-lane="{i}" '
+                    f'aria-controls="lvp{i}" aria-selected="{str(sel).lower()}" tabindex="{0 if sel else -1}">'
+                    f'<i style="background:var(--c{i})"></i>{escape(lane_short(L, i, qn))}</button>')
+        cols = ([evl] if evl is not None else []) + [i]
+        mine = [n for n in nodes if n["lane"] in cols]
+        cells, prev = [], None
+        head = ('<div class="lvh"></div>' + (f'<div class="lvh">{escape(lane_name(lanes[evl]))}</div>' if evl is not None else "")
+                + f'<div class="lvh">{escape(lane_short(L, i, qn))}</div>')
+        for yr in sorted({n["year"] for n in mine}):
+            if prev is not None and yr - prev > BREAK_GAP:
+                cells.append('<div class="lvbrk">(시간 생략)</div>')
+            prev = yr
+            cells.append(f'<div class="lvy">{yr}</div>')
+            for c in cols:
+                items = []
+                for n in (x for x in mine if x["year"] == yr and x["lane"] == c):
+                    items.append(lane_box(L, n, by, edges, labels, links, qn, cols))
+                cells.append(f'<div class="lvc{" ev" if c == evl else ""}">{"".join(items)}</div>')
+        if not mine:
+            cells.append('<div class="lvbrk">아직 연구가 없습니다</div>')
+        ans = lanes[i].get("answer") if topic else None
+        answer = (f'<div class="lvans" data-lane="{i}"><span class="lvak">지금의 답</span>'
+                  f'<span class="lva">{md(ans)}</span></div>') if ans else ""
+        q = (f'<p class="lvq"><span class="qk">Q{qn[i]}</span><span>{escape(lane_name(lanes[i]))}</span></p>' if i in qn
+             else f'<p class="lvq"><i style="background:var(--c{i})"></i><span>{escape(lane_name(lanes[i]))}</span></p>')
+        marks = "".join(f'<marker id="lv{m}{i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" '
+                        f'orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--{c})"/></marker>'
+                        for m, c in (("ar", "edge"), ("arm", "accent"), ("are", "muted")))
+        panes.append(f'<section class="lvp" role="tabpanel" id="lvp{i}" data-lane="{i}" aria-labelledby="lvt{i}"'
+                     f'{"" if sel else " hidden"}>{q}<div class="lvgw">'
+                     f'<div class="lvg{" one" if evl is None else ""}">{head}{"".join(cells)}</div>'
+                     f'<svg class="lve" aria-hidden="true"><defs>{marks}</defs><g></g></svg></div>{answer}</section>')
+    what = "질문" if topic else "갈래"
+    foot = ""
+    if labels:
+        foot = f'<p class="lvfoot">{escape(figure_footer(L, labels, ev))}</p>'
+    return (f'<div class="lv" id="lv"><div class="lvtabs" role="tablist" aria-label="{what} 고르기">{"".join(tabs)}</div>'
+            f'<p class="lvhint">좌우로 밀면 다른 {what}로 넘어갑니다. 상자를 누르면 근거 패널이 열립니다.</p>'
+            f'<div class="lvpanes">{"".join(panes)}</div>{foot}</div>')
+
+
+def lane_box(L, n, by, edges, labels, links, qn, cols):
+    """One box of the lane view: the button (opens the panel) and, under it, stubs for edges to other lanes."""
+    lane = n["lane"]
+    if is_event(n):
+        return (f'<div class="lvn" data-id="{escape(n["id"])}"><button type="button" class="lvb lvev" '
+                f'data-id="{escape(n["id"])}" style="--col:var(--c{lane})" '
+                f'aria-label="{escape(n["title"])} ({n["year"]}). 눌러서 자세히 보기">'
+                f'<span class="lvt">{escape(n["title"])}</span></button></div>')
+    url, kind, info = links.of(n.get("openalex"), n.get("url"))
+    lab = labels.get(n["id"]) or LABEL_NONE
+    col = f"var(--d-{n['design']})" if n.get("design") in DESIGN_KO else f"var(--c{lane})"
+    cls = "lvb" + (" key" if n.get("key") else "") + (" pre" if kind == "preprint" else "")
+    tag = f'<span class="lvtag">{DESIGN_TAG[n["design"]]}</span>' if n.get("design") in DESIGN_KO else ""
+    aria = f'{n["title"]}, {n["sub"]}. 근거 수준: {lab}. 눌러서 근거 패널 열기'
+    stubs, seen = [], set()
+    for s, t, st in edges:
+        if s == n["id"] and t in by and by[t]["lane"] not in cols:
+            other, arrow = by[t], "→"
+        elif t == n["id"] and s in by and by[s]["lane"] not in cols:
+            other, arrow = by[s], "←"
+        else:
+            continue
+        if st == "x":
+            arrow = "≠"  # a dispute has no direction
+        if (arrow, other["id"]) in seen:
+            continue
+        seen.add((arrow, other["id"]))
+        name = f'Q{qn[other["lane"]]}' if other["lane"] in qn else lane_short(L, other["lane"], qn)
+        text = f'{arrow} {name}: {other["title"]}'
+        stubs.append(f'<button type="button" class="stub" data-to="{escape(other["id"])}" data-lane="{other["lane"]}" '
+                     f'data-type="{st}" aria-label="{escape(text)}: 그 {"질문" if qn else "갈래"}로 넘어가기">'
+                     f'{escape(text)}</button>')
+    return (f'<div class="lvn" data-id="{escape(n["id"])}"><button type="button" class="{cls}" data-id="{escape(n["id"])}" '
+            f'style="--col:{col}" aria-label="{escape(aria)}">{tag}{_badge_icon(BADGE.get(lab))}'
+            f'<span class="lvt">{escape(n["title"])}</span><span class="lvs">{escape(n["sub"])}</span></button>'
+            + (f'<div class="stubs">{"".join(stubs)}</div>' if stubs else "") + "</div>")
+
+
+def narrow_legend(L, links, ev=None):
+    """The legend for phones: a collapsed '범례' disclosure with a two-column list (CSS shows it below NARROW_PX,
+    where it replaces the SVG legend and the legend row)."""
+    topic = mode(L) == "topic"
+    used = {n.get("design") for n in L["nodes"]}
+    li = []
+    for d in DESIGN_KO:
+        if topic or d in used:
+            li.append(f'<li><span class="sw" style="background:color-mix(in srgb, var(--d-{d}) 12%, var(--surface));'
+                      f'border-color:var(--d-{d})">{DESIGN_TAG[d]}</span>{DESIGN_KO[d]}</li>')
+    types = [t for t in ("s", "d", "m", "e", "x") if any(e[2] == t for e in edge_list(L))]
+    if not topic:
+        types = sorted(set(types) | {"s", "d", "m"}, key="sdmex".index)
+    for t in types:
+        li.append(f'<li>{edge_swatch(t)}{EDGE_KO[t]}</li>')
+    if topic and any(ln.get("answer") for ln in L["lanes"] if not is_events_lane(ln)):
+        li.append('<li><span class="sw ans"></span>지금의 답</li>')
+    labels = node_labels(L, ev)
+    if any(BADGE.get(v) for v in labels.values()):
+        for k, kind in BADGE.items():
+            icon = _badge_icon(kind) or '<span class="lvbdg"></span>'
+            li.append(f'<li>{icon}근거: {k if kind else k + " (표시 없음)"}</li>')
+    n_pre = n_preprints(L, links)
+    if n_pre or not topic:
+        li.append(f'<li><span class="sw pre"></span>저널판 없음 (프리프린트 {n_pre}편)</li>')
+    li.append('<li class="wide"><span class="sw stub">→ Q2</span>다른 열로 이어지는 연결 (누르면 그 열로)</li>' if topic else
+              '<li class="wide"><span class="sw stub">→ 갈래</span>다른 갈래로 이어지는 연결 (누르면 그 갈래로)</li>')
+    return f'<details class="nlegend"><summary>범례</summary><ul class="nlg">{"".join(li)}</ul></details>'
 
 
 PANEL = ('<aside class="panel" id="panel" role="dialog" aria-modal="false" aria-labelledby="pt" hidden>'
@@ -1288,7 +1447,8 @@ def assets(L, links, ev=None, embed=False, evbase="evidence/"):
     answers = {i: ln["answer"] for i, ln in enumerate(L["lanes"]) if ln.get("answer")}
     qn = question_numbers(L) if mode(L) == "topic" else {}
     cfg = {"embed": embed, "evbase": evbase, "badge": BADGE, "answers": answers, "qn": qn,
-           "design": DESIGN_TAG}
+           "design": DESIGN_TAG, "et": [t for _, _, t in edge_list(L)], "narrow": NARROW_PX,
+           "lv": lane_view_default(L)}
     js = (js.replace("__NODES__", json.dumps(node_data(L, links, ev), ensure_ascii=False))
             .replace("__EDGES__", json.dumps([[s, t] for s, t, _ in edge_list(L)]))
             .replace("__LANES__", json.dumps([lane_name(l) for l in L["lanes"]], ensure_ascii=False))
@@ -1310,10 +1470,12 @@ def map_block(L, links, ev):
     """Controls, the map stage (SVG, tooltip, side panel)."""
     topic = mode(L) == "topic"
     lab = "질문 강조" if topic else "계열 강조"
-    return (f'<div class="controls" role="group" aria-label="{lab}"><span class="lab">{lab}</span>{lane_buttons(L)}</div>\n'
+    return (f'<div class="controls hl" role="group" aria-label="{lab}"><span class="lab">{lab}</span>{lane_buttons(L)}</div>\n'
             f'  {view_controls(L)}\n'
-            f'  <div class="stage" id="stage"><div class="scroll">{svg(L, links, ev)}</div>'
-            f'<div class="tip" id="tip" hidden></div>{PANEL}</div>')
+            f'  <p class="scrollhint" id="scrollhint" hidden>옆으로 밀어 더 보기 →</p>\n'
+            f'  <div class="stage" id="stage"><div class="scroll">{svg(L, links, ev)}</div>{lane_view(L, links, ev)}'
+            f'<div class="tip" id="tip" hidden></div>{PANEL}</div>\n'
+            f'  {narrow_legend(L, links, ev)}')
 
 
 def lineage_legend(L, n_pre):

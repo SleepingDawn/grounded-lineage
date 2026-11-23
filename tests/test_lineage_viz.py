@@ -158,6 +158,102 @@ class LineageVizTests(unittest.TestCase):
         self.assertEqual(embedded_json(out.read_text(encoding="utf-8"), "CFG")["evbase"], "../evidence/")
 
 
+class NarrowLayoutTests(unittest.TestCase):
+    """Phones (< 640 px): one lane at a time with tabs, cross-lane stubs, the legend as a disclosure. The markup
+    is always present and hidden by CSS on wide screens; the script switches it on below CFG.narrow."""
+
+    def embed(self, L):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lineage.json").write_text(json.dumps(L, ensure_ascii=False), encoding="utf-8")
+            with quiet():
+                page.main([str(root), "--embed"])
+            return (root / page.embed_name(L)).read_text(encoding="utf-8")
+
+    def pane(self, html, lane):
+        m = re.search(rf'<section class="lvp" role="tabpanel" id="lvp{lane}".*?</section>', html, re.S)
+        self.assertIsNotNone(m, f"pane for lane {lane}")
+        return m.group(0)
+
+    def test_topic_mode_has_question_tabs_panes_and_answer(self):
+        html = self.embed(TOPIC)
+        self.assertIn('<div class="lvtabs" role="tablist" aria-label="질문 고르기">', html)
+        self.assertIn('id="lvt1" data-lane="1" aria-controls="lvp1" aria-selected="true" tabindex="0"', html)
+        self.assertIn('id="lvt2" data-lane="2" aria-controls="lvp2" aria-selected="false" tabindex="-1"', html)
+        self.assertNotIn('id="lvt0"', html)                       # the events lane is a column, not a tab
+        p1, p2 = self.pane(html, 1), self.pane(html, 2)
+        self.assertNotIn(" hidden>", p1.split(">", 1)[0] + ">")   # Q1 shown first
+        self.assertIn(" hidden>", p2.split(">", 1)[0] + ">")
+        for p in (p1, p2):                                        # events column beside every question
+            self.assertIn('class="lvb lvev" data-id="ev"', p)
+            self.assertIn('class="lve"', p)                       # edge layer the script draws into
+        self.assertIn('<div class="lvans" data-lane="1">', p1)    # the lane's answer at the bottom
+        self.assertIn("단기 +2.7~12%", p1)
+        self.assertIn('class="lvb" data-id="h"', p1)
+        self.assertNotIn('data-id="c"', p1)                       # other questions' boxes stay in their pane
+        # year rows of a pane: its own studies plus the events (1967 belongs to Q2 only)
+        self.assertEqual(re.findall(r'<div class="lvy">(\d+)</div>', p1), ["1998", "2000", "2021"])
+        self.assertIn('id="lvbtn" aria-pressed="true"', html)     # one question at a time by default
+        cfg = embedded_json(html, "CFG")
+        self.assertEqual(cfg["narrow"], page.NARROW_PX)
+        self.assertTrue(cfg["lv"])
+        self.assertEqual(cfg["et"], [t for _, _, t in page.edge_list(TOPIC)])  # edge types for the drawn lines
+
+    def test_cross_lane_edges_become_stubs_that_name_the_other_question(self):
+        L = json.loads(json.dumps(TOPIC))
+        L["edges"] += [["h", "c", "d"], ["b", "r", "x"]]
+        html = self.embed(L)
+        p1, p2 = self.pane(html, 1), self.pane(html, 2)
+        self.assertIn('class="stub" data-to="c" data-lane="2" data-type="d"', p1)
+        self.assertIn(">→ Q2: 이부요금</button>", p1)
+        self.assertIn(">← Q1: MetroCard 평가</button>", p2)
+        self.assertIn(">≠ Q2: 리뷰</button>", p1)                # disputes have no direction
+        self.assertNotIn("Q1: Bull", p1)                          # same-lane edges are drawn, not stubbed
+        self.assertNotIn("data-to=\"ev\"", html)                  # evaluates edges go to the events column
+        self.assertEqual(self.pane(self.embed(TOPIC), 1).count('class="stub"'), 0)
+
+    def test_legend_disclosure_and_narrow_only_controls(self):
+        html = self.embed(TOPIC)
+        self.assertIn('<details class="nlegend"><summary>범례</summary><ul class="nlg">', html)
+        legend = html[html.index('<details class="nlegend">'):]
+        for label in list(page.DESIGN_KO.values()) + [page.EDGE_KO["e"], "지금의 답"]:
+            self.assertIn(label, legend)
+        self.assertIn('class="lanebtn optbtn narrow-only" id="lvbtn"', html)
+        self.assertIn('<p class="scrollhint" id="scrollhint" hidden>옆으로 밀어 더 보기 →</p>', html)
+        self.assertIn('<div class="controls hl"', html)
+        css = page.base_css(TOPIC)
+        self.assertIn(".lv,.nlegend,.narrow-only,.scrollhint{display:none}", css)   # desktop: none of it shows
+        narrow = css[css.index("@media (max-width:639.98px)"):]
+        for rule in (".wrap.lv-on .lv{display:block}", ".wrap.lv-on .scroll", ".nlegend{display:block}",
+                     ".legend{display:none}", ".stage.cue::after"):
+            self.assertIn(rule, narrow)
+        self.assertNotIn("flex-wrap:nowrap", css)                 # chips wrap instead of scrolling off-screen
+
+    def test_lineage_mode_tabs_default_on_only_above_four_lanes(self):
+        self.assertFalse(page.lane_view_default(LINEAGE))
+        html = self.embed(LINEAGE)
+        self.assertIn('id="lvbtn" aria-pressed="false"', html)
+        self.assertIn("한 갈래씩 보기", html)
+        self.assertIn('id="lvt0" data-lane="0"', html)            # no events lane: every lane is a tab
+        self.assertIn(">A. 국소</button>", html)
+        self.assertIn('class="lvg one"', html)                    # year + lane columns only
+        big = json.loads(json.dumps(LINEAGE))
+        big["lanes"] += [{"label": f"L{k}"} for k in range(3)]
+        self.assertTrue(page.lane_view_default(big))
+
+    def test_script_hooks(self):
+        js = (page.ASSETS / "page.js").read_text(encoding="utf-8")
+        body = js[js.index("function showLane"):js.index("function step")]
+        self.assertIn("post()", body)                             # the report frame resizes after every switch
+        self.assertIn("draw(pane())", body)
+        for hook in ("touchstart", "touchend", "ArrowRight", "matchMedia", ".stub", "openNode(b.dataset.id, b)",
+                     "openLane(+a.dataset.lane, a)", "snu-embed-height"):
+            self.assertIn(hook, js)
+        # the tabs share the chip style but must not trigger the lane-highlight buttons
+        self.assertIn("querySelectorAll('.controls .lanebtn[data-lane]')", js)
+        self.assertNotIn("querySelectorAll('.lanebtn[data-lane]')", js)
+
+
 class QuartoEmbedTests(unittest.TestCase):
     def test_html_image_becomes_auto_sized_frame_and_pdf_takes_the_static_image(self):
         from PIL import Image as PILImage
