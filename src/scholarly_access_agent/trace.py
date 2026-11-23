@@ -559,7 +559,18 @@ def trace_report(markdown_path: str | Path, evidence_dir: str | Path | None = No
         topic = find_topic(path)
         evidence_dir = topic / "evidence" if topic else None
     folder = Path(evidence_dir).expanduser().resolve() if evidence_dir else None
-    result = trace_text(path.read_text(encoding="utf-8"), load_records(folder))
+    text = path.read_text(encoding="utf-8")
+    records = load_records(folder)
+    result = trace_text(text, records)
+    # figures: `![..](figs/x.html)` with a sibling figs/x.fig.json must resolve to evidence like a citation
+    from scholarly_access_agent.viz.figure import check_report
+    figures = check_report(text, path.parent, records)
+    if figures:
+        result["findings"] = sorted(result["findings"] + figures, key=lambda f: f["line"])
+        for level in ("error", "warning"):
+            result["summary"][level + "s"] = sum(1 for f in result["findings"] if f["level"] == level)
+        result["ok"] = result["summary"]["errors"] == 0
+    result["summary"]["figure_findings"] = len(figures)
     return {"report": str(path), "evidence_folder": str(folder) if folder else None, **result}
 
 

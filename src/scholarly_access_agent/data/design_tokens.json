@@ -1,0 +1,67 @@
+{
+ "_about": "One source for the report (data/quarto/snu-report.css), the lineage map (lineage/assets/page.css via lineage/page.py) and every viz chart (viz/common.py). Edit here, then run `python -m scholarly_access_agent.viz.tokens --write` to refresh snu-report.css; tests/test_tokens.py fails while any output disagrees with this file.",
+ "color": {
+  "light": {
+   "ink": "#1d232b",
+   "muted": "#59626e",
+   "rule": "#d5dae1",
+   "rule_soft": "#e9ecf0",
+   "surface": "#ffffff",
+   "page": "#f5f6f8",
+   "accent": "#1f5f99",
+   "head_bg": "#eef2f6",
+   "zebra": "#f8f9fb",
+   "callout": "#f1f6fb",
+   "band": "#ebe9e3",
+   "band_edge": "#c6c2b6",
+   "code_bg": "#f3f5f8",
+   "code_ink": "#24527a"
+  },
+  "dark": {
+   "ink": "#e3e7ed",
+   "muted": "#9aa3b2",
+   "rule": "#323a46",
+   "rule_soft": "#232a33",
+   "surface": "#14181e",
+   "page": "#0e1115",
+   "accent": "#7fb0ff",
+   "head_bg": "#1d232c",
+   "zebra": "#181d24",
+   "callout": "#172231",
+   "band": "#262b33",
+   "band_edge": "#4b5361",
+   "code_bg": "#1d232c",
+   "code_ink": "#a9c9f0"
+  }
+ },
+ "design": {
+  "_about": "Study-design colours: Okabe-Ito (colour-blind safe). Dark mode lightens only the blue, which reads dim on the dark surface; the others keep their hue.",
+  "order": ["model", "observational", "experiment", "quasi", "review", "unknown"],
+  "label": {"model": "모형", "observational": "관찰", "experiment": "실험", "quasi": "준실험", "review": "리뷰",
+            "unknown": "미분류"},
+  "light": {"model": "#0072B2", "observational": "#009E73", "experiment": "#D55E00", "quasi": "#E69F00",
+            "review": "#CC79A7", "unknown": "#8a8f98"},
+  "dark": {"model": "#3A93D8", "observational": "#009E73", "experiment": "#D55E00", "quasi": "#E69F00",
+           "review": "#CC79A7", "unknown": "#8b93a0"}
+ },
+ "read_depth": {
+  "_about": "Mark style by derived read label: full = filled dot / solid bar, half = half-filled dot / light bar, hollow = ring / outline bar; none = left out of charts and counted in a note.",
+  "본문 확인": "full",
+  "발췌 확인": "half",
+  "인용 맥락만": "hollow",
+  "초록만 확인": "hollow",
+  "미확인": "none"
+ },
+ "font": {
+  "body": ["Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "system-ui", "sans-serif"],
+  "mono": ["IBM Plex Mono", "D2Coding", "ui-monospace", "Consolas", "monospace"]
+ },
+ "size": {
+  "report_body": 17,
+  "page_body": 15,
+  "chart_title": 17,
+  "chart_subtitle": 13,
+  "chart_label": 13,
+  "chart_small": 12
+ }
+}

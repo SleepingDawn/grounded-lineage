@@ -19,32 +19,29 @@ from scholarly_access_agent.evidence import (
     resolve_folders,
 )
 
+from . import tokens
+
 VEGA = "https://cdn.jsdelivr.net/npm/vega@5.30.0/build/vega.min.js"
 VEGA_LITE = "https://cdn.jsdelivr.net/npm/vega-lite@5.21.0/build/vega-lite.min.js"
 VEGA_EMBED = "https://cdn.jsdelivr.net/npm/vega-embed@6.26.0/build/vega-embed.min.js"
 SCHEMA = "https://vega.github.io/schema/vega-lite/v5.json"
 
-# Light-theme tokens. The page swaps these exact strings for the dark ones when the theme is dark, so the
-# .vl.json next to each page stays a plain, valid light-theme spec.
-# Every value must be unique within LIGHT (the swap is by string). surface = the report page behind the chart;
-# rule = row separators; band / band_edge = the neutral reference column; model = the design colour that needs a
-# lighter step on the dark surface, where #0072B2 reads dim (the other Okabe-Ito hues stay as they are).
-LIGHT = {"fg": "#1f2328", "muted": "#59636e", "grid": "#d8dee4", "domain": "#8c959f", "surface": "#ffffff",
-         "rule": "#eaeef2", "band": "#eceae4", "band_edge": "#c9c5b9",
-         "model": "#0072B2"}
-DARK = {"fg": "#e6edf3", "muted": "#9198a1", "grid": "#30363d", "domain": "#6e7681", "surface": "#0d1117",
-        "rule": "#21262d", "band": "#262a30", "band_edge": "#4a5059",
-        "model": "#3A93D8"}
-FONT = "Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif"
+# Colours and fonts come from data/design_tokens.json (shared with the report and the lineage map). Specs are
+# written with the light values; the page swaps each light string for its dark one when the theme is dark, so the
+# .vl.json next to each page stays a plain, valid light-theme spec. Keys: fg / muted (ink), grid (axis and group
+# rules), rule (row separators), surface (behind the chart), band / band_edge (reference column), d_<design>.
+LIGHT, DARK = tokens.viz_swap()
+FONT = tokens.font_stack("body")
+SIZE = tokens.tokens()["size"]
 
-# Okabe-Ito, shared with the lineage flow map
-DESIGNS = [("model", "모형", "#0072B2"), ("observational", "관찰", "#009E73"), ("experiment", "실험", "#D55E00"),
-           ("quasi", "준실험", "#E69F00"), ("review", "리뷰", "#CC79A7")]
-UNKNOWN_DESIGN = ("unknown", "미분류", "#999999")
+# Okabe-Ito study-design colours (light values; dark mode lightens only the blue): (key, Korean label, colour)
+_DESIGN_ALL = [(k, label, LIGHT[f"d_{k}"]) for k, label in tokens.design_labels()]
+DESIGNS = [d for d in _DESIGN_ALL if d[0] != "unknown"]
+UNKNOWN_DESIGN = next(d for d in _DESIGN_ALL if d[0] == "unknown")
 
-# read depth -> point fill: full = 본문 확인, half = 발췌 확인, hollow = 인용 맥락만 / 초록만 확인; 미확인 is left out
-# of the charts and counted in a note
-ACCESS_FILL = [(LABEL_BODY, "full"), (LABEL_EXCERPTS, "half"), (LABEL_SECONDARY, "hollow"), (LABEL_ABSTRACT, "hollow")]
+# read depth -> mark fill (full / half / hollow); 미확인 ("none") is left out of the charts and counted in a note
+ACCESS_FILL = [(label, style) for label, style in tokens.read_depth().items() if style != "none"]
+assert {LABEL_BODY, LABEL_EXCERPTS, LABEL_SECONDARY, LABEL_ABSTRACT} == {a for a, _ in ACCESS_FILL}
 
 
 class VizError(Exception):
@@ -103,7 +100,14 @@ SWATCH = {
     "hollow": '<circle cx="7" cy="7" r="5.2" fill="none" stroke="currentColor" stroke-width="1.6"/>',
     "band": '<rect x="0.5" y="0.5" width="13" height="13" rx="2" fill="var(--c-band)" stroke="var(--c-band_edge)"/>',
     "arrow": '<path d="M3,3L11,7L3,11Z" fill="currentColor"/>',
+    "approx": '<text x="7" y="11.5" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor">≈</text>',
+    "line": '<line x1="1" x2="13" y1="7" y2="7" stroke="{c}" stroke-width="2.4" stroke-linecap="round"/>',
+    "square": '<rect x="1" y="1" width="12" height="12" rx="2.5" fill="{c}"/>',
 }
+
+
+THEMED = {tokens.value(path, "light").lower(): f"var({name})" for name, path in tokens.viz_vars().items()
+          if path.startswith(("color.", "design."))}
 
 
 def legend_html(groups: list[dict]) -> str:
@@ -113,7 +117,7 @@ def legend_html(groups: list[dict]) -> str:
         chips = []
         for it in g.get("items") or []:
             c = str(it.get("color") or "currentColor")
-            c = next((f"var(--c-{k})" for k, v in LIGHT.items() if v.lower() == c.lower()), c)  # follows the theme
+            c = THEMED.get(c.lower(), c)  # a token colour follows the theme
             shape = SWATCH.get(it.get("swatch"), SWATCH["dot"]).replace("{c}", html.escape(c))
             chips.append(f'<span class="chip"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">'
                          f'{shape}</svg>{html.escape(str(it["label"]))}</span>')
@@ -185,18 +189,24 @@ def study_label(record: dict, stem: str = "") -> str:
 
 
 def base_config() -> dict:
-    fg, muted, grid, domain = LIGHT["fg"], LIGHT["muted"], LIGHT["grid"], LIGHT["domain"]
+    """Vega-Lite config from the design tokens: every chart's ink, rules and fonts."""
+    fg, muted, grid = LIGHT["fg"], LIGHT["muted"], LIGHT["grid"]
+    small, label = SIZE["chart_small"], SIZE["chart_label"]
     return {
         "background": None,
         "font": FONT,
         "view": {"stroke": None},
-        "axis": {"labelColor": muted, "titleColor": fg, "gridColor": grid, "domainColor": domain,
-                 "tickColor": domain, "labelFontSize": 11, "titleFontSize": 12, "titleFontWeight": 600},
-        "legend": {"labelColor": fg, "titleColor": fg, "labelFontSize": 11, "titleFontSize": 11,
-                   "orient": "bottom", "direction": "vertical", "labelLimit": 220},
-        "title": {"color": fg, "subtitleColor": muted, "fontSize": 13, "anchor": "start"},
-        "text": {"color": fg},
-        "header": {"labelColor": fg, "titleColor": fg},
+        "axis": {"labelColor": muted, "titleColor": muted, "gridColor": LIGHT["rule"], "domainColor": grid,
+                 "tickColor": grid, "labelFontSize": small, "titleFontSize": small + 0.5, "titleFontWeight": 500,
+                 "labelFont": FONT, "titleFont": FONT},
+        "legend": {"labelColor": fg, "titleColor": muted, "labelFontSize": small, "titleFontSize": small,
+                   "orient": "top", "direction": "horizontal", "labelLimit": 220, "labelFont": FONT,
+                   "titleFont": FONT},
+        "title": {"color": fg, "subtitleColor": muted, "fontSize": SIZE["chart_title"],
+                  "subtitleFontSize": SIZE["chart_subtitle"], "anchor": "start", "font": FONT},
+        "text": {"color": fg, "fontSize": label, "font": FONT},
+        "header": {"labelColor": fg, "titleColor": fg, "labelFont": FONT, "titleFont": FONT},
+        "range": {"category": [d[2] for d in DESIGNS]},
     }
 
 
@@ -208,16 +218,14 @@ def finish(spec: dict) -> dict:
     return out
 
 
-PAGE = """<!doctype html>
+PAGE = r"""<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
-:root { __LVARS__ }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { __DVARS__ } }
-:root[data-theme="dark"] { __DVARS__ }
+__TOKENS__
 html, body { margin: 0; padding: 0; background: transparent; color: var(--fg); overflow-x: hidden;
   font-family: __FONT__; }
 figure { margin: 0; padding: 4px 2px 2px; max-width: 100%; box-sizing: border-box; }
@@ -225,15 +233,15 @@ figure { margin: 0; padding: 4px 2px 2px; max-width: 100%; box-sizing: border-bo
 #vis.vega-embed, #vis .vega-embed { width: 100%; display: block; }
 #vis .vega-embed summary { display: none; }
 .fhead { margin: 0 4px 10px; }
-.ftitle { margin: 0; font-size: 17px; line-height: 1.35; font-weight: 650; color: var(--fg); letter-spacing: -0.01em; }
-.fsub { margin: 3px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.ftitle { margin: 0; font-size: __TSIZE__; line-height: 1.35; font-weight: 650; color: var(--fg); letter-spacing: -0.01em; }
+.fsub { margin: 3px 0 0; font-size: __SSIZE__; line-height: 1.45; color: var(--muted); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0 4px 6px; font-size: 12.5px; color: var(--fg); }
 .lg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .lg-t { color: var(--muted); font-weight: 600; }
 .chip { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .chip svg { flex: none; }
 figcaption { font-size: 12px; line-height: 1.45; color: var(--muted); margin: 6px 4px 0; overflow-wrap: anywhere; }
-.err { color: #D55E00; font-size: 13px; }
+.err { color: var(--c-d-experiment); font-size: 13px; }
 </style>
 <script src="__VEGA__"></script>
 <script src="__VEGA_LITE__"></script>
@@ -262,10 +270,17 @@ __LEGEND__
     } catch (e) { /* cross-origin parent */ }
     return null;
   }
-  function theme() {
+  function theme() {  // a theme sent by the report frame wins, then a same-origin parent, then the OS
     var t = forced || parentTheme() || document.documentElement.getAttribute("data-theme");
     if (t === "dark" || t === "light") return t;
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  function luminance(c) {  // "#rrggbb" or "rgb(r, g, b)" -> 0..1, else null
+    var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c), r;
+    if (m) r = [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+    else if ((m = /rgba?\(([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)/.exec(c))) r = [+m[1], +m[2], +m[3]];
+    else return null;
+    return (0.2126 * r[0] + 0.7152 * r[1] + 0.0722 * r[2]) / 255;
   }
   function swap(node, map) {
     if (typeof node === "string") return Object.prototype.hasOwnProperty.call(map, node) ? map[node] : node;
@@ -310,11 +325,7 @@ __LEGEND__
   function render() {
     var t = theme();
     document.documentElement.setAttribute("data-chart-theme", t);
-    for (var key in LIGHT) {
-      var v = t === "dark" ? DARK[key] : LIGHT[key];
-      document.documentElement.style.setProperty("--c-" + key, v);
-      if (key === "fg" || key === "muted") document.documentElement.style.setProperty("--" + key, v);
-    }
+    document.documentElement.setAttribute("data-theme", t);  // the token CSS follows
     lastWidth = el.clientWidth;
     lastNarrow = isNarrow();
     if (view) { view.finalize(); view = null; }
@@ -345,8 +356,13 @@ __LEGEND__
   }
   window.addEventListener("message", function (ev) {
     var d = ev.data || {};
-    if (d.type === "snu-theme" && (d.theme === "dark" || d.theme === "light" || d.theme === null)) {
-      forced = d.theme; render();
+    // the report (runtime/quarto_report.py) sends snu-embed-theme; older callers snu-theme
+    // The report's own surface colour decides when it is sent: Quarto marks every page quarto-light, so the
+    // theme name alone can say "light" on a dark report.
+    var t = d.theme, s = ((d.vars || {})["--snu-surface"] || "").trim(), l = luminance(s);
+    if (d.type === "snu-embed-theme" && l !== null) t = l < 0.45 ? "dark" : "light";
+    if ((d.type === "snu-embed-theme" || d.type === "snu-theme") && (t === "dark" || t === "light" || t === null)) {
+      if (t !== forced) { forced = t; render(); }
     }
   });
   try {
@@ -367,13 +383,11 @@ __LEGEND__
 def page_html(spec: dict, title: str, caption: str) -> str:
     meta = spec.get("usermeta") or {}
 
-    def css_vars(tokens: dict) -> str:
-        return " ".join(f"--c-{k}: {v};" for k, v in tokens.items()) + f" --fg: {tokens['fg']}; --muted: {tokens['muted']};"
-
     spec_js = json.dumps(spec, ensure_ascii=False).replace("</", "<\\/")
     repl = {
         "__TITLE__": html.escape(title), "__CAPTION__": html.escape(caption), "__HEAD__": header_html(meta.get("header")),
-        "__LEGEND__": legend_html(meta.get("legend") or []), "__LVARS__": css_vars(LIGHT), "__DVARS__": css_vars(DARK),
+        "__LEGEND__": legend_html(meta.get("legend") or []), "__TOKENS__": tokens.css_vars(tokens.viz_vars()),
+        "__TSIZE__": f"{SIZE['chart_title']}px", "__SSIZE__": f"{SIZE['chart_subtitle']}px",
         "__FONT__": FONT, "__VEGA__": VEGA, "__VEGA_LITE__": VEGA_LITE, "__VEGA_EMBED__": VEGA_EMBED,
         "__LIGHT__": json.dumps(LIGHT), "__DARK__": json.dumps(DARK), "__SPEC__": spec_js,
     }

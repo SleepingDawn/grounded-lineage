@@ -27,7 +27,19 @@ Authoring: pipe tables only; figures as local PNG/JPG inside the report folder (
 | adoption by year | `scholarly-access-agent viz adoption <topic>` | `data/adoption.json` |
 | citations by year and RPYS | `scholarly-access-agent viz timeline <topic>` | `data/analysis.json` |
 
-Draw a figure only for numbers that are compared (effect sizes, shares over time, counts by year); categorical findings (which cells are empty, which grade a paper got) go in a table. Place each figure in the section whose question it answers, with a caption that says what to read from it (e.g. "점이 실험 띠 안에 들어오는 연구").
+**Plan the figures per question, then let the tool draw them.** Before writing, decide for each section (each reader question) whether its answer needs a figure, a table or neither, and record the decision in `figs/figures.json` (question, decision, form, one-line why). Choose by the shape of the answer:
+
+| The answer is about | Form |
+|---|---|
+| how big an effect or value is across studies | forest (estimate with range, grouped by design) or dot |
+| change over time (adoption, before/after a policy) | line or bar by year |
+| how spread out the values are under the same condition | strip |
+| how two quantities relate across studies | scatter |
+| shares of a whole | stacked bar |
+| who built on whom | the research flow map (research-lineage) |
+| categories, statuses, fewer than three values, or no comparison | a table, or nothing |
+
+Then write a figure spec `figs/<name>.fig.json` — the question, the takeaway (becomes the title), the form, axes, and one row per data point that names its evidence record and result (`{"key": "bull2021", "result": "trips"}`), or `computed: true` with resolvable inputs — and run `scholarly-access-agent viz figure <topic> --spec figs/<name>.fig.json`. The tool takes every number from the records, rejects literal numbers and mixed units, shows read depth in the marks and the page in the tooltip, and applies the shared design tokens (map, charts and report share colours, fonts and dark mode). A form the tool lacks may be written as a Vega-Lite spec under `"vegalite"`; its data still comes only from `rows`. `report trace` checks every embedded figure's rows. Place each figure in the section whose question it answers, with a caption that says what to read from it (e.g. "점이 실험 띠 안에 들어오는 연구").
 
 Layout (theme in `src/scholarly_access_agent/data/quarto`): one Korean sans family (Pretendard, NanumBarunGothic, Noto Sans KR, Malgun Gothic, first installed; override with `SNU_REPORT_FONT_FAMILY`), about 1.6 line height and a short measure (KRDS-style type, Tufte-style measure); `##` headings with a rule, `###` in the accent colour; quiet tables with a header band, zebra rows and column widths sized to content (the longest token of a column never wraps); one ink and one accent colour, all text at least 4.5:1 contrast. HTML: 17 px body, `word-break: keep-all` for Korean, side table of contents. PDF (Typst): A4, 10.5 pt, title block and page n/N footer. Built-in reportlab PDF (no Quarto): 9.6 pt body, NanumBarunGothic first (`SNU_REPORT_FONT`/`SNU_REPORT_FONT_BOLD`), same palette.
 

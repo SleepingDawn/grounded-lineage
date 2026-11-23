@@ -290,7 +290,7 @@ class PageAndCliTests(unittest.TestCase):
     def test_page_title_and_legend_row_sit_above_the_plot(self):
         spec = {"mark": "point", "usermeta": {
             "header": {"title": "질문 <i>?", "subtitle": "부제 · n편"},
-            "legend": [{"title": "연구 설계", "items": [{"label": "모형", "swatch": "dot", "color": LIGHT["model"]},
+            "legend": [{"title": "연구 설계", "items": [{"label": "모형", "swatch": "dot", "color": LIGHT["d_model"]},
                                                      {"label": "관찰", "swatch": "dot", "color": "#009E73"}]},
                        {"title": "읽은 범위", "items": [{"label": "본문 확인", "swatch": "full"},
                                                      {"label": "발췌 확인", "swatch": "half"}]},
@@ -301,16 +301,19 @@ class PageAndCliTests(unittest.TestCase):
         self.assertEqual(page.count('class="legend"'), 1)  # one legend row
         self.assertIn("질문 &lt;i&gt;?", page)
         self.assertIn('<span class="lg-t">연구 설계</span>', page)
-        self.assertIn('fill="var(--c-model)"', page)  # a themed design colour follows dark mode
-        self.assertIn('fill="#009E73"', page)
+        self.assertIn('fill="var(--c-d-model)"', page)  # a token colour follows dark mode
+        self.assertIn('fill="var(--c-d-observational)"', page)
+        self.assertIn("--c-d-model: #3A93D8;", page)  # the dark step of the blue
         self.assertIn('fill="var(--c-band)"', page)
         self.assertIn(f"--c-band: {LIGHT['band']};", page)
         self.assertIn(f"--c-band: {DARK['band']};", page)
         self.assertIn("isNarrow()", page)  # the page picks the wide or narrow row layout
 
-    def test_theme_tokens_are_unique(self):
-        self.assertEqual(len(set(LIGHT.values())), len(LIGHT))  # the dark swap is by string
+    def test_theme_swap_is_unambiguous(self):
         self.assertEqual(set(LIGHT), set(DARK))
+        swap = {}
+        for k, v in LIGHT.items():  # the dark swap is by string: one light value, one dark value
+            self.assertEqual(swap.setdefault(v, DARK[k]), DARK[k], k)
 
     def test_spec_cannot_break_out_of_script(self):
         page = page_html({"title": "</script><script>alert(1)</script>"}, "t", "c")

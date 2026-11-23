@@ -169,10 +169,13 @@ var V=['--snu-ink','--snu-muted','--snu-rule','--snu-accent','--snu-head-bg','--
 function lum(c){var m=/rgba?\(([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:[, /]+([\d.]+))?/.exec(c||'');
 if(!m||(m[4]!==undefined&&+m[4]===0))return null;return (0.2126*m[1]+0.7152*m[2]+0.0722*m[3])/255;}
 function theme(){var h=document.documentElement,b=document.body,t=h.getAttribute('data-theme')||(b&&b.getAttribute('data-theme'));
-if(t==='dark'||t==='light')return t;if(b&&b.classList.contains('quarto-dark'))return 'dark';
-if(b&&b.classList.contains('quarto-light'))return 'light';
+if(t==='dark'||t==='light')return t;
+// The painted background decides: Quarto keeps a quarto-light class even when the report CSS
+// switches to dark through prefers-color-scheme, so the class is only a last hint.
 var l=b?lum(getComputedStyle(b).backgroundColor):null;if(l===null)l=lum(getComputedStyle(h).backgroundColor);
 if(l!==null)return l<0.45?'dark':'light';
+if(b&&b.classList.contains('quarto-dark'))return 'dark';
+if(b&&b.classList.contains('quarto-light'))return 'light';
 return window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}
 function vars(){var cs=getComputedStyle(document.documentElement),o={};V.forEach(function(k){o[k]=cs.getPropertyValue(k).trim();});
 if(!o['--snu-font']&&document.body)o['--snu-font']=getComputedStyle(document.body).fontFamily;return o;}

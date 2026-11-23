@@ -23,6 +23,7 @@ from pathlib import Path
 
 from ..evidence import (LABEL_ABSTRACT, LABEL_BODY, LABEL_EXCERPTS, LABEL_NONE, LABEL_SECONDARY, derive_label,
                         format_locator)
+from ..viz import tokens
 
 LANE_W, X0, BOX_W, BOX_H, STACK, TOP = 132, 58, 120, 38, 46, 74
 BREAK_GAP = 8  # insert a "(시간 생략)" break when consecutive node years differ by more than this
@@ -43,10 +44,10 @@ Q_LANE_W, EV_LANE_W, X0_TOPIC, PILL_H = 156, 112, 64, 24
 PILL_W = EV_LANE_W - 14
 ANS_LH, ANS_PAD = 16, 11  # answer cell: line height, inner padding
 MAX_QUESTIONS = 5
-# Study-design colours: the Okabe–Ito colour-blind-safe set, the same in light and dark mode. Box text stays
-# in the ink colour on a 12% tint, so text contrast does not depend on these hues.
-DESIGN_COLORS = {"model": "#0072B2", "observational": "#009E73", "experiment": "#D55E00", "quasi": "#E69F00",
-                 "review": "#CC79A7"}
+# Study-design colours (light mode): the Okabe–Ito colour-blind-safe set from data/design_tokens.json, shared with
+# the report and the viz charts; dark mode lightens only the blue. Box text stays in the ink colour on a 12% tint,
+# so text contrast does not depend on these hues.
+DESIGN_COLORS = {k: v for k, v in tokens.design_colors("light").items() if k in DESIGN_KO}
 DESIGN_TAG = {"model": "모", "observational": "관", "experiment": "실", "quasi": "준", "review": "리"}
 # Evidence badge in the box corner, by the derived read label (evidence.derive_label or the row level).
 BADGE = {LABEL_BODY: "full", LABEL_EXCERPTS: "half", LABEL_SECONDARY: "dash", LABEL_ABSTRACT: "ring", LABEL_NONE: None}
@@ -1260,13 +1261,14 @@ ASSETS = Path(__file__).with_name("assets")
 
 
 def palette_css():
-    """Design colour tokens (Okabe–Ito), identical in light and dark mode."""
-    return ":root{" + "".join(f"--d-{k}:{v};" for k, v in DESIGN_COLORS.items()) + "}\n"
+    """Shared tokens (ink, surface, rule, fonts, the --d-* design colours) for light and dark mode, from
+    data/design_tokens.json: the same values the report and the viz charts use."""
+    return tokens.css_vars(tokens.lineage_vars())
 
 
 def base_css(L):
     """Stylesheet shared by the page, the embed variant and the report figure."""
-    css = (ASSETS / "page.css").read_text(encoding="utf-8") + palette_css()
+    css = palette_css() + (ASSETS / "page.css").read_text(encoding="utf-8")
     if has_disputes(L):
         css += DISPUTE_CSS
     return css
@@ -1300,7 +1302,7 @@ HEAD = """<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>{css}</style>"""
 
 

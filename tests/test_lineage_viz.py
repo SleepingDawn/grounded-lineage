@@ -107,8 +107,10 @@ class LineageVizTests(unittest.TestCase):
                                               "quasi": "#E69F00", "review": "#CC79A7"})
         css = page.base_css(TOPIC)
         for k, v in page.DESIGN_COLORS.items():
-            self.assertIn(f"--d-{k}:{v};", css)
-        self.assertEqual(css.count("--d-model:"), 1)  # no dark-mode override: the same hue in both themes
+            self.assertIn(f"--d-{k}: {v};", css)
+        # from data/design_tokens.json: only the blue is lightened for the dark surface (OS setting + data-theme)
+        self.assertEqual(css.count("--d-model: #3A93D8;"), 2)
+        self.assertEqual(css.count("--d-experiment:"), 1)
         self.assertIn("svg .ansbox{fill:color-mix(in srgb, var(--fg) 5%, var(--surface));stroke:var(--fg)", css)
         svg = page.svg(TOPIC, page.Links({}, {}))
         self.assertIn('class="dt">관</text>', svg)                # design tag in the box corner

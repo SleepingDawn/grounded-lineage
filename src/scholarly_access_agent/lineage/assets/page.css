@@ -1,20 +1,17 @@
 :root{
-  /* layout: single reading column; the genealogy diagram breaks out wider and scrolls on its own */
-  --bg:#f4f6f9; --surface:#ffffff; --fg:#18202e; --muted:#586174; --line:#d4dae4; --band:#eef1f6;
-  --accent:#c2410c; --edge:#8a93a5; --link:#1f5fbf;
+  /* layout: single reading column; the genealogy diagram breaks out wider and scrolls on its own.
+     --bg --surface --fg --muted --line --band --link --f-body --f-mono and the --d-* design colours come from
+     data/design_tokens.json (lineage/page.py prepends them); these are the map's own colours. */
+  --accent:#c2410c; --edge:#8a93a5;
   --c0:#64748b; --c1:#2f6aa8; --c2:#b7791f; --c3:#2f855a; --c4:#7c4dcc; --c5:#0e8a8c; --c6:#c53030; --c7:#c2357f;
   --c8:#8a6a2f; --c9:#5b7a1e; --c10:#a14a2a; --c11:#3d5a80;
-  --f-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
-  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#10141b; --surface:#171c25; --fg:#e6e9ef; --muted:#9aa3b5; --line:#2c3442; --band:#141922;
-  --accent:#fb923c; --edge:#6b7487; --link:#7fb0ff;
+  --accent:#fb923c; --edge:#6b7487;
   --c0:#94a3b8; --c1:#6aa5e6; --c2:#e0a84a; --c3:#5cc08a; --c4:#a888f0; --c5:#3cc4c6; --c6:#f06a6a; --c7:#ee6fb0; --c8:#d2b06a; --c9:#9cc25a; --c10:#e08a68; --c11:#8fb0d8;
   color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#10141b; --surface:#171c25; --fg:#e6e9ef; --muted:#9aa3b5; --line:#2c3442; --band:#141922;
-  --accent:#fb923c; --edge:#6b7487; --link:#7fb0ff;
+  --accent:#fb923c; --edge:#6b7487;
   --c0:#94a3b8; --c1:#6aa5e6; --c2:#e0a84a; --c3:#5cc08a; --c4:#a888f0; --c5:#3cc4c6; --c6:#f06a6a; --c7:#ee6fb0; --c8:#d2b06a; --c9:#9cc25a; --c10:#e08a68; --c11:#8fb0d8;
   color-scheme:dark}
 body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.65;
