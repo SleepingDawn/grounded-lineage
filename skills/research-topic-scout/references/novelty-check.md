@@ -5,7 +5,7 @@ Has someone already done this card's study? Decide from the closest papers' full
 ## Search (role `locator`)
 
 - **Keywords only.** Build queries from technical terms (method names, material systems, properties, datasets). Never paste the card's question or hypothesis into a search engine: unpublished ideas should not leave the machine as sentences.
-- **At least three rounds**, each using a different strategy, and stop when two rounds in a row add no paper graded Medium or higher:
+- **Three to five rounds**, each using a different strategy. Never stop before round three. From round three on, stop as soon as the last two rounds (rounds 2 and 3 count) added no candidate that, from its title and abstract, shares at least two of the card's question, system and method (the locator's own screen; the grading below is separate):
   1. exact technique or model name + system;
   2. the method's key component under other names (synonyms from the review's records);
   3. the application or property with any method;
@@ -29,7 +29,7 @@ Take the 2–3 candidates that look closest. Read their Methods (and Results whe
 ## Verdict
 
 - `not-novel` — any paper graded Exact.
-- `reframe` — any paper graded High: rewrite the card so it differs substantively (new system class, property or method), then check the rewritten card again.
+- `reframe` — any paper graded High: rewrite the card once so it differs substantively (new system class, property or method), then check the rewritten card again. A second High makes it `not-novel`.
 - `novel` — all closest papers Medium or lower after the minimum search.
 - `provisional` — the closest paper could be read only as an abstract; say so and keep the card out of `recommended`.
 

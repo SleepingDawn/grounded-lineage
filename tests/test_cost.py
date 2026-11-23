@@ -56,6 +56,20 @@ class CostTests(unittest.TestCase):
         self.assertEqual(reduced["counts"]["read"], 22)  # figures/PDFs absorbed the cut
         self.assertLess(reduced["counts"]["figures"] + reduced["counts"]["pdf"], 15)
 
+    def test_topics_cap_shrinks_topic_stages_before_reading(self):
+        _, base = run("--ledger", self.ledger, "estimate", "--playbook", "topics")
+        cap = base["total_tokens"] - 150_000
+        _, out = run("--ledger", self.ledger, "estimate", "--playbook", "topics", "--cap-tokens", str(cap))
+        red = out["reduced"]
+        self.assertTrue(red["fits"])
+        self.assertEqual(red["counts"]["figures"], 0)
+        self.assertLess(red["topic"]["cells"], 10)
+        self.assertEqual(red["topic"]["rounds"], 3)  # novelty rounds never shrink
+        _, only = run("--ledger", self.ledger, "estimate", "--playbook", "topics", "--skip-status",
+                      "--records", "20", "--cap-tokens", "200000")
+        self.assertIsNone(only["reduced"]["counts"])
+        self.assertGreaterEqual(only["reduced"]["topic"]["cards"], 3)
+
     def test_record_calibrates_later_estimates(self):
         _, base = run("--ledger", self.ledger, "estimate", "--playbook", "status")
         est = base["stages"]["read"]["tokens"]

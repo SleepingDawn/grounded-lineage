@@ -4,13 +4,18 @@
 
 Exit: the topic report is rendered with every card decided (recommended / read more / stop), or the budget stop fired (state saved for resume).
 
-1. **Find or make the review.** A review folder for the topic with `evidence/` records not older than about six months → use it (`--skip-status` in the estimate). Otherwise the status playbook runs first, sharing this run's id, checkpoint ① and budget.
-2. **Profile.** Load `profile` from `<research root>/research-pilot.md`; note what is missing.
-3. **Estimate.** `cost estimate --playbook topics` (with `--skip-status` when the review exists, `--records <number of records>`), plan limits as in the status playbook.
-4. **Checkpoint ①.** Show: review used or to be made, profile (missing items marked), estimate by role and stage, cap, model rows. Option 1 (recommended): proceed with the profile as is and the estimated or reduced budget. Alternatives: fill the missing profile items first; the review-only (status) playbook. Answers about the profile are saved to the settings file. Dry run ends here.
-5. **Gap matrix and empty-cell check** — research-topic-scout steps 1–2. Record stage costs.
-6. **Checkpoint ②.** Show: the axes, the matrix (compact), the 5–8 directions the cards would take, tokens spent vs estimate, remaining estimate. Option 1 (recommended): these axes and directions. Alternatives: different axes (name them), drop or add directions.
-7. **Cards, novelty, feasibility, critique, gate** — research-topic-scout steps 3–7, top 3 for feasibility and critique. Apply the budget rule in cost.md between steps.
-8. **Report** — research-topic-scout step 8. `cost report --run <id>`; `run.jsonl` `event: done`.
+One run, one `run.jsonl` (playbook `topics`), one estimate, one checkpoint ①. Steps are logged as `topics.N`; review steps run inside it are logged as `status.N`.
 
-Reply: recommended topics, each with one line, novelty verdict and closest paper, first concrete step, main risk; `read more` topics with the missing item; review used; estimated vs measured tokens; checkpoint choices (user or auto); report and PDF paths.
+1. **Find the review.** A review folder for the topic with `evidence/` records not older than about six months → use it. None → this run also does the review: status playbook steps 4–6, after checkpoint ① below. Set up the folder as in status step 1 either way.
+2. **Profile.** Load `profile` from `<research root>/research-pilot.md`; list what is missing.
+3. **Estimate.** Review exists: `scholarly-access-agent cost estimate --playbook topics --skip-status --records <evidence-record count> …`. No review: `scholarly-access-agent cost estimate --playbook topics [--preset deep] …` (it includes the review stages). Remaining limit and cap per [cost.md](../references/cost.md).
+4. **Checkpoint ①.** Show: review used or to be made (question, preset, counts), profile with missing items marked, estimate by stage and role, cap, model rows. Option 1 (recommended): proceed with the profile as is and the estimated or reduced budget. Alternatives: fill the missing profile items first; review only (status playbook); the other preset. Profile answers are saved to the settings file (created then). Dry run ends here.
+5. **Review** when there was none: status steps 4–6 (its report renders as `<Topic>/README.md`).
+6. **Gap matrix and empty-cell check** — research-topic-scout steps 1–2.
+7. **Checkpoint ②.** Show: the axes, the matrix (compact), the directions the cards would take (5–8, or the reduced count), tokens spent vs estimate, remaining estimate. Option 1 (recommended): these axes and directions. Alternatives: different axes (name them), drop or add directions.
+8. **Cards, novelty, ranking, feasibility, critique, gate** — research-topic-scout steps 3–7. Apply the budget rule between steps.
+9. **Report and close** — research-topic-scout step 8. `scholarly-access-agent cost report --run <id>`; `run.jsonl` `event: done`.
+
+Missing profile under auto-recommend: do not ask; proceed, list the missing items at the top of the topic report, and apply research-topic-scout's no-profile rules. Do not create the settings file from nothing.
+
+Reply: recommended topics, each with one line, novelty verdict and closest paper, first concrete step, main risk; `read more` topics with the missing item; review used or made; profile items missing; estimated vs measured tokens; checkpoint choices (user or auto); report paths.

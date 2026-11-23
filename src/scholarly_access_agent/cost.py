@@ -44,7 +44,7 @@ ROLES = {
     "matrix": "main", "gap_check": "locator", "cards": "judge", "novelty_search": "locator",
     "novelty_read": "reader", "feasibility": "judge", "critique": "judge", "report": "writer",
 }
-SHRINK_ORDER = ("figures", "pdf", "read", "screened")
+SHRINK_ORDER = ("figures", "pdf", "cells", "cards", "shortlist", "read", "screened")
 
 
 def ledger_path(root: Path | None = None) -> Path:
@@ -134,17 +134,28 @@ def estimate(playbook: str, counts: dict, topic: dict | None, rows: list[dict]) 
             "calibrated_stages": f"{calibrated}/{len(out_stages)}"}
 
 
-def fit(playbook: str, counts: dict, topic: dict | None, rows: list[dict], cap: int) -> dict:
-    """Shrink figures, then PDFs, then papers read, then screened, until the estimate fits."""
-    counts = dict(counts)
-    floors = {"figures": 0, "pdf": 0, "read": 5, "screened": 20}
+FLOORS = {"figures": 0, "pdf": 0, "cells": 3, "cards": 3, "shortlist": 2, "read": 5, "screened": 20}
+
+
+def fit(playbook: str, counts: dict | None, topic: dict | None, rows: list[dict], cap: int) -> dict:
+    """Shrink in SHRINK_ORDER (figures, PDFs, empty cells checked, cards, shortlist, papers
+    read, screened) down to FLOORS until the estimate fits. Novelty rounds never shrink."""
+    counts = dict(counts) if counts else None
+    topic = dict(topic) if topic else None
     for key in SHRINK_ORDER:
-        while estimate(playbook, counts, topic, rows)["total_tokens"] > cap and counts[key] > floors[key]:
-            counts[key] = max(floors[key], counts[key] - max(1, counts[key] // 5))
-            counts["pdf"] = min(counts["pdf"], counts["read"])
-            counts["figures"] = min(counts["figures"], counts["read"])
+        bag = counts if counts is not None and key in counts else topic if topic and key in topic else None
+        if bag is None:
+            continue
+        while estimate(playbook, counts, topic, rows)["total_tokens"] > cap and bag[key] > FLOORS[key]:
+            bag[key] = max(FLOORS[key], bag[key] - max(1, bag[key] // 5))
+            if counts is not None:
+                counts["pdf"] = min(counts["pdf"], counts["read"])
+                counts["figures"] = min(counts["figures"], counts["read"])
+            if topic is not None:
+                topic["shortlist"] = min(topic["shortlist"], topic["cards"])
     result = estimate(playbook, counts, topic, rows)
-    return {"counts": counts, "total_tokens": result["total_tokens"], "fits": result["total_tokens"] <= cap}
+    return {"counts": counts, "topic": topic, "total_tokens": result["total_tokens"],
+            "fits": result["total_tokens"] <= cap}
 
 
 def cmd_estimate(a, path: Path) -> dict:
@@ -175,7 +186,7 @@ def cmd_estimate(a, path: Path) -> dict:
     if cap is not None:
         out["cap_tokens"] = cap
         out["fits"] = out["total_tokens"] <= cap
-        if not out["fits"] and counts:
+        if not out["fits"]:
             out["reduced"] = fit(a.playbook, counts, topic, rows, cap)
     elif a.cap_pct is not None or a.remaining_pct is not None:
         out["cap_note"] = "no calibrated plan-% rate yet: pass --cap-tokens, or record runs with --plan-pct"

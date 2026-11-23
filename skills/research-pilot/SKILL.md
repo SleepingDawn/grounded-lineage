@@ -17,7 +17,7 @@ One entry point that picks a playbook, runs the research skills in a fixed order
 | --- | --- |
 | field status, trends, literature review, "what is known about X" | [playbooks/status.md](playbooks/status.md) |
 | research topics, gaps, next project, "what should I work on" | [playbooks/topics.md](playbooks/topics.md) |
-| resume, "이어서" | the playbook named in the topic folder's `run.jsonl`; continue after its last logged step |
+| resume, "이어서" | the playbook named in the topic folder's `run.jsonl`; continue after its last logged step (`event: done` means finished) |
 | where a concept came from, how it branched | research-lineage directly (no pilot playbook yet) |
 | is this one idea new | research-topic-scout step 4 directly |
 | turn a paper's method into calculations | literature-to-calculation directly |
@@ -26,11 +26,12 @@ Two readings both plausible and the choice is reversible: pick one, say which in
 
 ## Settings
 
-`<research root>/research-pilot.md` (create it on first use from what the user answers at checkpoint ①):
+`<research root>/research-pilot.md`, where the research root is `SNU_RESEARCH_ROOT` (default `~/Documents/research`). Create it when the user first answers a settings or profile question at checkpoint ①; until then, defaults apply:
 
 ```markdown
 checkpoints: ask            # ask | auto-recommend
 cap_pct: 30                 # optional per-run cap, % of the 5-hour plan limit
+cap_tokens: 1500000         # optional per-run cap in tokens (works without get_usage)
 roles:                      # optional overrides of research-models.md
   reader: opus @high
 profile:                    # used by topics; reused every run
@@ -52,7 +53,7 @@ At a checkpoint, show what was decided and the numbers, then offer:
 
 In Claude Code use AskUserQuestion with the recommendation first; elsewhere a numbered list where 1 is the recommendation.
 
-**Auto-recommend.** When the settings say `checkpoints: auto-recommend`, or the user said "추천대로 자동", "끝까지 자동", "auto" for this run, take option 1 at every checkpoint without asking, log it as `auto` in `run.jsonl`, and mark it in the report ("checkpoint ② auto-accepted: axes …").
+**Auto-recommend.** When the settings say `checkpoints: auto-recommend`, or the user said "추천대로 자동", "끝까지 자동", "auto" for this run, take option 1 at every checkpoint without asking: post the checkpoint summary as a short status message (what was chosen, the numbers) and keep going, log it as `auto` in `run.jsonl`, and mark it in the final report's method note ("checkpoint ② auto-accepted: axes …"). When a run makes two reports (review + topics), the marks and the cost totals go in the last one.
 
 ## Run log
 
@@ -60,7 +61,7 @@ In Claude Code use AskUserQuestion with the recommendation first; elsewhere a nu
 
 ## Sub-agents
 
-Every sub-agent's brief begins: "Read <installed path>/research-pilot/worker.md before anything else." Then the task, the role's model and effort (passed explicitly), file paths rather than pasted text, and the output shape. See [worker.md](worker.md).
+Every sub-agent's brief begins: "Read <path>/worker.md before anything else.", where `<path>` is the absolute directory this SKILL.md was loaded from (the skill's base directory). Then the task, the role's model and effort (passed explicitly), file paths rather than pasted text, and the output shape. See [worker.md](worker.md).
 
 ## Budget
 

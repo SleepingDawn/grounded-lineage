@@ -4,7 +4,7 @@ Pick each agent's row by what its output becomes: a judgment that enters the rep
 
 | Role | Does | Claude Code (Agent tool) | Codex (`spawn_agent`) | Effort: Default / Deep |
 | --- | --- | --- | --- | --- |
-| `main` | plan, screen, resolve versions, gap matrix, synthesize | the session (recommend Opus) | the session model | `high` / `xhigh` |
+| `main` | plan, screen, decide which version counts, gap matrix, synthesize | the session (recommend Opus) | the session model | `high` / `xhigh` |
 | `reader` | Tier 2–3 full-text reading; closest-prior-work reading for novelty | `model: "opus"`, `effort: "high"` | `reasoning_effort: "high"` | `high` / `high` |
 | `judge` | question cards, novelty verdicts, feasibility, critique, inclusion decisions | `model: "opus"`, `effort: "high"` | `reasoning_effort: "high"` | `high` / `high` |
 | `writer` | report or draft from already-checked records | `model: "opus"`, `effort: "medium"` | `reasoning_effort: "medium"` | `medium` / `medium` |
