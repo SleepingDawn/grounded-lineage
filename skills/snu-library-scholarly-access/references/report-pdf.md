@@ -6,7 +6,7 @@ Structure:
 2. Summary (한눈에 보기): 4–7 bullets, one claim each, with its key number and unit.
 3. Body under `##`/`###` (they become the table of contents and PDF outline). Compare items in pipe tables: one row per item, short cells, units in the header or cell; split tables wider than about 7 columns.
 4. Put the key conclusion or current verdict in a `>` quote: it becomes a callout box.
-5. Evidence status per item (**본문 확인 (섹션/페이지)**, **초록만 확인**, **미확인**) and its source type (저널 · 학회 논문 · 학회 초록 · 학위논문 · preprint · 보고서), a change log when revising, then sources with links; mark preprints and 예비 근거.
+5. Evidence status per item, taken from `scholarly-access-agent evidence labels` (**본문 확인 (섹션/페이지)**, **발췌 확인**, **인용 맥락만**, **초록만 확인**, **미확인**), never typed by hand, and its source type (저널 · 학회 논문 · 학회 초록 · 학위논문 · preprint · 보고서), a change log when revising, then sources with links; mark preprints and 예비 근거.
 
 **Topic reports** (a subject, policy or phenomenon rather than a method's genealogy): the body follows the reader's questions, not a taxonomy of the literature.
 - One `##` section per question, 3–5 questions, in the order the summary answers them; the questions are the same as the topic-mode lanes of a research flow map when there is one (research-lineage).

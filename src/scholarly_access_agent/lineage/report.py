@@ -21,7 +21,8 @@ from pathlib import Path
 from .page import (DESIGN_KO, Links, is_event, lane_name, load, mode, parse_desc, question_numbers, study_ref, svg,
                    validate, warnings)
 
-STATUS = {"fulltext": "본문 확인", "abstract": "초록만 확인", "metadata": "미확인"}
+STATUS = {"fulltext": "본문 확인", "excerpts": "발췌 확인", "secondary": "인용 맥락만", "abstract": "초록만 확인",
+          "metadata": "미확인"}
 VERSION = {"journal": "저널", "proceedings": "학회", "preprint": "프리프린트", "unknown": ""}
 
 

@@ -20,7 +20,8 @@ from pathlib import Path
 LANE_W, X0, BOX_W, BOX_H, STACK, TOP = 132, 58, 120, 38, 46, 74
 BREAK_GAP = 8  # insert a "(시간 생략)" break when consecutive node years differ by more than this
 KIND_KO = {"journal": "저널", "proceedings": "학회 논문집", "preprint": "프리프린트", "unknown": "OpenAlex"}
-LEVEL_KO = {"fulltext": "본문 확인", "abstract": "초록만 확인", "metadata": "미확인"}  # same labels as snu-library-scholarly-access
+LEVEL_KO = {"fulltext": "본문 확인", "excerpts": "발췌 확인", "secondary": "인용 맥락만", "abstract": "초록만 확인",
+            "metadata": "미확인"}  # same labels as snu-library-scholarly-access
 EDGE_TYPES = {"s", "d", "m", "e"}  # e = evaluates: study -> the real-world event it evaluates
 MODES = ("lineage", "topic")
 # Study design (optional node field): topic mode colours boxes by it; lineage mode only when present.

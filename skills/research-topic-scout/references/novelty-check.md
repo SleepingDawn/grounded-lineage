@@ -33,6 +33,8 @@ Take the 2–3 candidates that look closest. Read their Methods (and Results whe
 - `novel` — all closest papers Medium or lower after the minimum search.
 - `provisional` — the closest paper could be read only as an abstract; say so and keep the card out of `recommended`.
 
+The verdict follows from the grades and the access of the highest-graded papers; `scholarly-access-agent evidence lint <topic folder>` derives it and flags a stored verdict that differs. A Medium paper seen only as an abstract or web summary keeps the card `provisional` until it is read.
+
 A combination of known techniques is novel only if the combination itself answers a question none of its parts could; a routine extension is High, not Medium.
 
 ## Record (`novelty/<card>.json`)

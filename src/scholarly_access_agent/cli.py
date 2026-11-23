@@ -272,6 +272,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Research-run token estimates, spend ledger and calibration (estimate, record, report).",
         add_help=False,
     )
+    subcommands.add_parser(
+        "evidence",
+        help="Lint evidence/novelty records and derive read-depth labels (lint, labels).",
+        add_help=False,
+    )
 
     return parser
 
@@ -490,6 +495,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from scholarly_access_agent.cost import main as cost_main
 
         return cost_main(argv[1:])
+    if argv[:1] == ["evidence"]:
+        from scholarly_access_agent.evidence import main as evidence_main
+
+        return evidence_main(argv[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

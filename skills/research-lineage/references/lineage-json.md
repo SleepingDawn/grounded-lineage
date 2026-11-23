@@ -61,7 +61,7 @@ Text fields accept `**bold**`; everything else is escaped. Full examples: `examp
   },
   "rows": [
     {"year": "2021", "work": "4G-HDNNP (Ko 외)", "what": "…", "change": "…", "lane": 3,
-     "level": "fulltext",                     // fulltext | abstract | metadata
+     "level": "fulltext",                     // fulltext | excerpts | secondary | abstract | metadata (mirrors the evidence record)
      "evidence": "LES p.1",                  // section/page where it was read
      "version": "arXiv v2",                  // optional: version actually read; default = link kind
      "openalex": "W3086372695"},
@@ -72,7 +72,7 @@ Text fields accept `**bold**`; everything else is escaped. Full examples: `examp
 }
 ```
 
-Evidence labels on the page and in the report chapter follow snu-library-scholarly-access: `fulltext` = **본문 확인**, `abstract` = **초록만 확인**, `metadata` = **미확인**.
+Evidence labels on the page and in the report chapter follow snu-library-scholarly-access: `fulltext` = **본문 확인**, `excerpts` = **발췌 확인**, `secondary` = **인용 맥락만** (known only from a citing paper), `abstract` = **초록만 확인**, `metadata` = **미확인**.
 
 ## Topic mode
 

@@ -623,7 +623,36 @@ def render_report(markdown_path: str | Path, output_path: str | Path | None = No
     formats: any of "html", "pdf"; default ["html"], or ["pdf"] when output_path ends in .pdf.
     engine: "auto" uses Quarto when installed, otherwise the built-in reportlab PDF;
     "quarto" requires Quarto; "reportlab" forces the built-in PDF renderer.
+
+    When the report's folder (or its parent, for ideas/README.md) holds an evidence/ folder,
+    the evidence lint runs too: its errors and a summary line go into `warnings`. The lint
+    never fails the render.
     """
+    result = _render_report(markdown_path, output_path, engine, formats)
+    if result.get("ok") and isinstance(result.get("warnings"), list):
+        result["warnings"].extend(_evidence_lint_warnings(markdown_path))
+    return result
+
+
+def _evidence_lint_warnings(markdown_path: str | Path) -> list[str]:
+    try:
+        from scholarly_access_agent.evidence import lint_folder, summary_line
+
+        folder = Path(markdown_path).expanduser().resolve().parent
+        topic = next((f for f in (folder, folder.parent) if (f / "evidence").is_dir()), None)
+        if topic is None:
+            return []
+        lint = lint_folder(topic)
+        lines = [f"evidence_lint error: {f['file']} {f['rule']}: {f['message']}"
+                 for f in lint["findings"] if f["level"] == "error"]
+        return lines + [summary_line(lint, topic)]
+    except Exception as exc:  # the lint must never break a render
+        return [f"evidence_lint_failed: {type(exc).__name__}"]
+
+
+def _render_report(markdown_path: str | Path, output_path: str | Path | None = None,
+                   engine: str = "auto", formats: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
+    """Render without the evidence lint (see render_report)."""
     from . import quarto_report
 
     if engine not in ENGINES:
