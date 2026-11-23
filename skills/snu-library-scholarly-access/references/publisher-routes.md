@@ -28,3 +28,15 @@ Pick the first route that applies instead of rediscovering it. Give this table t
 | `doi.org` links | Never pass a DOI resolver URL | Resolve to the publisher URL first (Crossref or the search result) | `download_pdf` rejects `doi.org` as unsupported |
 
 Record the route actually used in the evidence record (`route`, `version`). A retrieval failure is an access fact, never a reason to exclude a paper.
+
+## Korean literature
+
+| Source | Route | Notes |
+|---|---|---|
+| KCI (kci.go.kr) | Search with Korean keywords for KCI-listed journals; the article page gives the journal's 등재 status, the DOI (often `10.xxxx` from the society) and a PDF link when the society allows it | Prefer 등재/등재후보 journals. Record authors in Hangul with the paper's romanisation |
+| RISS (riss.kr) | Theses and domestic journals; full text often needs institutional login | Theses are `venue_type: thesis` |
+| DBpia (dbpia.co.kr) | Many society journals; SNU subscription through the library | Subscription text: same AI-use caution as foreign publishers; read the abstract page first |
+| ScienceON (scienceon.kisti.re.kr) | Reports and proceedings | Proceedings abstracts are 예비 근거 |
+
+These hosts are not in the snu-library domain list by default; add one only when the user asks (`add_domain`).
+

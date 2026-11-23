@@ -263,6 +263,11 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=False,
     )
     subcommands.add_parser(
+        "refs",
+        help="Check evidence records' bibliographic metadata against Crossref (refs check).",
+        add_help=False,
+    )
+    subcommands.add_parser(
         "cost",
         help="Research-run token estimates, spend ledger and calibration (estimate, record, report).",
         add_help=False,
@@ -477,6 +482,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from scholarly_access_agent.lineage.cli import main as lineage_main
 
         return lineage_main(argv[1:])
+    if argv[:1] == ["refs"]:
+        from scholarly_access_agent.refs import main as refs_main
+
+        return refs_main(argv[1:])
     if argv[:1] == ["cost"]:
         from scholarly_access_agent.cost import main as cost_main
 

@@ -40,6 +40,10 @@ A second skill, `skills/research-lineage/SKILL.md`, traces where a concept came 
 
 `scholarly-access-agent cost` keeps runs inside a budget: `estimate` gives tokens per stage and role for a playbook and preset (the dry run), with a cap from the remaining plan limit and the reduced counts that fit it; `record` appends measured stage tokens to `<research root>/.cost/ledger.jsonl`; `report` compares estimate and measurement and shows the per-stage calibration that later estimates use.
 
+## Source quality and reference check
+
+Evidence records carry `venue_type` (journal, conference paper or abstract, thesis, preprint, report), `indexing` and `evidence_role`; summaries and verdicts rest on peer-reviewed, full-text items, and conference abstracts, preprints and abstract-only items are shown as 예비 근거. Korean-setting questions add a KCI/RISS/DBpia route. `scholarly-access-agent refs check <evidence folder>` compares every record with Crossref by DOI (title, year, first author, venue, item type → suggested `venue_type`) and lists records without a DOI for a manual KCI/RISS check; only DOIs are sent.
+
 ## Verify
 
 ```sh

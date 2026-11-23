@@ -5,6 +5,14 @@ Log each query, source, date, and candidate DOI/arXiv ID/URL. Normalize DOI case
 
 **Version priority (journal first).** If a peer-reviewed journal version exists, it is the version to read and cite: try PMC/Europe PMC (`read_url`), then the publisher page, open access or subscription (`download_pdf` → `read_pdf`), subject to access-and-auth.md; the per-publisher route is in publisher-routes.md. Fall back to the arXiv/preprint only when the journal version is unavailable, access-restricted, or retrieval fails, and record the reason (`access restriction` vs `tool error`). A preprint may still be read to supplement content missing from the journal version (e.g., an appendix); mark such evidence as preprint. Sub-agents must follow the same priority and report which version they read.
 
+## Source quality
+
+- **What carries a conclusion.** Summary bullets, verdicts and the current answers of a topic report rest on peer-reviewed items (`venue_type` journal or full conference paper in fields where proceedings are refereed), read in full text. Conference abstracts and talks, preprints, working papers, theses and anything read only as an abstract may appear, but only marked **예비 근거** (preliminary) in their own row or block, never alone behind a number in the summary.
+- **Recent work.** Show the newest studies (last ~2 years) explicitly, because readers want them, in a "최신·예비 근거" block when they are not yet peer-reviewed or were read only as abstracts. Do not drop a strong recent journal article to make room for it, and do not promote an abstract to fill the "recent" slot.
+- **Role.** Only `empirical`/`model`/`review` items answer a question. `context` items (governance, history, critique) go in a context paragraph, not in an evidence table.
+- **Korean setting.** When the question concerns Korea (a Korean city, policy or dataset), search Korean sources as their own route: KCI (kci.go.kr), RISS, DBpia and ScienceON, with Korean keywords, and prefer KCI-listed (등재/등재후보) journal articles. A conference talk or proceedings abstract is used only when no journal article covers the point, marked 예비 근거. Write titles and authors as printed (Hangul) with the romanisation in parentheses.
+- **Metadata check before delivery.** Run `scholarly-access-agent refs check <topic folder>/evidence` (Crossref by DOI): it compares title, year, first author, venue and item type with each record and suggests `venue_type`. Fix every mismatch; records without a DOI (many Korean items) are listed for a manual KCI/RISS check.
+
 ## Tiers and budgets
 State the budget at the start (which preset, with its numbers) and report what was actually spent.
 
