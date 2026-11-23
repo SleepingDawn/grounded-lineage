@@ -16,7 +16,7 @@ Optional widening (depth), each capped:
 Usage:
   lineage collect OUT_DIR SEED [SEED ...]
   lineage collect OUT_DIR SEED --base data --query '<tested query>' --per-keyword 60
-  lineage collect OUT_DIR SEED --base data --ancestors 6 --per-ancestor 40 --focus 'charge|electrostat'
+  lineage collect OUT_DIR SEED --base data --ancestors 6 --per-ancestor 40 --focus 'fatigue|crack'
 """
 from __future__ import annotations
 

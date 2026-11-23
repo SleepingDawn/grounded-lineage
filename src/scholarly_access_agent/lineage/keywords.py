@@ -9,7 +9,7 @@
 
 Usage: lineage keywords DATA_DIR "CONTEXT" [TOP_N] [MIN_ANC] [FOCUS_REGEX]
   e.g. lineage keywords data '"machine learning" OR "neural network"' 15 5 'long-range|electrostat|charge'
-       lineage keywords data '"randomized" OR "cohort"' 15 5 'statin|lipid'
+       lineage keywords data '"finite element" OR "digital image correlation"' 15 5 'fatigue|crack'
 FOCUS_REGEX (optional) keeps only tags that are concentrated in on-topic titles.
 """
 import json

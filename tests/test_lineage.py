@@ -656,23 +656,23 @@ class AnchorCheckTests(unittest.TestCase):
                 return {"id": f"https://openalex.org/N{i}", "title": title, "publication_year": 2026,
                         "cited_by_count": 1, "referenced_works": ["https://openalex.org/A"]}
             full = {"results": [], "meta": {"count": 4}}
-            without_name = {"results": [hit(i, f"School meal programme and child growth {i}") for i in range(30)],
+            without_name = {"results": [hit(i, f"Data-driven crack growth prediction in welded joints {i}") for i in range(30)],
                             "meta": {"count": 60}}
-            without_other = {"results": [hit(100 + i, f"Unrelated cohort {i}") for i in range(3)],
+            without_other = {"results": [hit(100 + i, f"Unrelated weld inspection {i}") for i in range(3)],
                              "meta": {"count": 20}}
 
             def fake_search(q, n):
-                if q.startswith('"nutrition transfer"'):
+                if q.startswith('"Paris law"'):
                     return full if "AND" in q else without_other
                 return without_name
             out = io.StringIO()
             with mock.patch.object(query_test, "search", side_effect=fake_search), \
                     mock.patch.object(query_test, "get", return_value={"results": []}), \
                     contextlib.redirect_stdout(out):
-                query_test.main([str(d), '"nutrition transfer" AND (growth OR stunting)', "--label", "q1",
-                                 "--list", "0", "--drop-blocks", "--focus", "growth|stunting", "--gold", "S"])
+                query_test.main([str(d), '"Paris law" AND (crack OR fatigue)', "--label", "q1",
+                                 "--list", "0", "--drop-blocks", "--focus", "crack|fatigue", "--gold", "S"])
             text = out.getvalue()
-            self.assertIn("ANCHOR in q1: without \"nutrition transfer\"", text)
+            self.assertIn("ANCHOR in q1: without \"Paris law\"", text)
             self.assertEqual(len(json.loads((d / "queries.json").read_text(encoding="utf-8"))), 1)  # variants not logged
             checks = json.loads((d / "anchor_checks.json").read_text(encoding="utf-8"))
             self.assertEqual([c["state"] for c in checks], ["anchor", ""])
@@ -681,8 +681,8 @@ class AnchorCheckTests(unittest.TestCase):
     def test_field_wide_tags_are_found_from_the_data(self):
         from collections import Counter
         from scholarly_access_agent.lineage import keywords
-        df = Counter({"randomized controlled trial": 40, "statin": 50, "myopathy": 6, "lipid lowering": 12})
-        self.assertEqual(keywords.generic_tags(df, 100), {"randomized controlled trial", "statin"})
+        df = Counter({"finite element method": 40, "fatigue": 50, "weld toe": 6, "crack closure": 12})
+        self.assertEqual(keywords.generic_tags(df, 100), {"finite element method", "fatigue"})
 
 
 class EraBalanceTests(unittest.TestCase):

@@ -8,7 +8,7 @@ adoption share use `lineage adoption` (forward papers only).
 Each run is appended to DATA_DIR/mentions.json (regex, roles, counts per year, date) with an id ("mentions#2").
 
 Usage: lineage mentions DATA_DIR "REGEX" [--list]
-  lineage mentions data "MACE-LES|LES-augmented|latent Ewald" --list
+  lineage mentions data "topology optimi[sz]ation|SIMP|level.set" --list
   lineage mentions data "baseline|benchmark|compared (with|to)" --list
 Matching is case-insensitive over title + abstract of the citing / expanded papers.
 """

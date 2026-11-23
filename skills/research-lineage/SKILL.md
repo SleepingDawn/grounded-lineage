@@ -15,7 +15,7 @@ Citation data finds candidates; reading decides the lineage. `scholarly-access-a
 
 | The user asks about | Mode | Lanes are | Example |
 |---|---|---|---|
-| where a **method or concept** came from and how it branched | `lineage` (default) | the answers to 1–3 questions that split the method (branch axes, below) | "LES 열전도 계산법의 계보", "CRISPR 염기 편집의 계보", "인과추론 이중차분법의 흐름" |
+| where a **method or concept** came from and how it branched | `lineage` (default) | the answers to 1–3 questions that split the method (branch axes, below) | "LES 열전도 계산법의 계보", "위상 최적화 기법의 계보", "GaN 전력소자 신뢰성 연구의 흐름" |
 | a **topic**, policy or phenomenon in a narrowed scope ("X 연구 흐름", "X에 대해 정리") | `topic` (`meta.mode: "topic"`) | the **reader's questions** about the topic, in the order the report answers them | "도시 대중교통 정기권 연구 흐름" |
 
 In topic mode do not invent themes as lanes. Write 3–5 questions a reader of this topic would ask — taken from the user's words first, then from what the reviews and policy debates ask (effect size, design or price, alternatives, who gains, what it means for the user's setting). Each question is one lane with a `question` and, once read, an `answer` (current answer with its key number). Real-world events the studies evaluate (policies, launches, programmes) go in one `"kind": "events"` lane, linked by `e` edges from the studies that evaluate them; give every study a `design` (model, observational, experiment, quasi, review). The report body uses the same questions as its sections (snu-library `report-pdf.md`, topic reports). Schema: `references/lineage-json.md`; worked example: `examples/transit/lineage.json`.
@@ -28,7 +28,7 @@ When unsure which mode fits, use topic mode if the user named a subject rather t
 - One investigation = one folder: `lineage init <Topic>` creates `<research root>/<Topic>/` with `evidence/`, `figs/`, `archive/`, `data/` and a `lineage.json` skeleton, and prints the path. The research root is `SNU_RESEARCH_ROOT`. Run every other command with that folder as the work folder (absolute paths; the session's own directory does not change). Name the folder like the existing ones (`MLIP-trends-2026`, `LES-lineage`).
 - Inside it: `data/` (base corpus), `data_x/` (widened corpus), `README.md` (the report), `<Topic>.pdf`, `<slug>.html`. When the investigation is finished, add or update its row in `<research root>/README.md`.
 - OpenAlex key: read from `OPENALEX_API_KEY` in the environment and, on Windows, from the saved user variable. Without a key the free quota is small; on exhaustion commands stop with exit code 3 and keep their caches, so rerunning resumes.
-- Page and chapter chrome are Korean. Write every text field of `lineage.json` in the user's language; keep method names (4G-HDNNP, Cas9 base editor, difference-in-differences) as they are.
+- Page and chapter chrome are Korean. Write every text field of `lineage.json` in the user's language; keep method names (4G-HDNNP, SIMP, U-Net) as they are.
 
 ## Workflow
 
@@ -50,7 +50,7 @@ When unsure which mode fits, use topic mode if the user named a subject rather t
 Most wall-clock time is waiting, not reading. Overlap the steps; never cut the reading plan below.
 
 1. **Preflight before reading.** Call `doctor(probe_url=<one paywalled ScienceDirect article from the reading list>)` (CLI `doctor --probe <URL>`; see snu-library-scholarly-access `publisher-routes.md`). Ask for an SNU login renewal at once if it fails. An expired session silently downgrades every Elsevier paper to "abstract only".
-2. **Find the lanes early.** While `lineage collect` runs, do 2–3 native searches that combine the topic with each method family or approach you can think of (simulation: first-principles, machine-learned model, continuum; clinical: trial, cohort, registry; social science: experiment, survey, administrative data; …). Then pass 1 and pass 2 readers can start together. A lane found only after widening means one more serial reading batch.
+2. **Find the lanes early.** While `lineage collect` runs, do 2–3 native searches that combine the topic with each method family or approach you can think of (modelling: first-principles, data-driven or machine-learned, continuum FEM/CFD, reduced-order; experiment: in situ, accelerated testing, field data; design: optimisation, control; …). Then pass 1 and pass 2 readers can start together. A lane found only after widening means one more serial reading batch.
 3. **Dispatch all reading batches at once,** each with the route for every paper from `publisher-routes.md`, the extraction criteria and the evidence-record shape. Run query tests and widening while they read.
 4. **Draft `lineage.json` while the readers work:** lanes, node ids, edges and axes from abstracts and the analysis. Fill levels, numbers and evidence locators when the records arrive. Read the `lineage init` skeleton before writing it; write the file once, then fix it with small edits and `lineage check`.
 5. **Render once at the end:** page, figure, report PDF.
@@ -61,7 +61,7 @@ The report's method section names both search routes: the native searches logged
 
 ## Interpreting the analysis (step 3)
 
-- RPYS peaks: counted over references outside the collected field (seeds and citing papers are left out). Drop years whose top references are generic tools of the parent field (software, standard methods, statistics: a DFT functional, BLAST, a regression package). Keep topic precursors and the parent field's founding papers. List kept years in `evidence.rpys_years`.
+- RPYS peaks: counted over references outside the collected field (seeds and citing papers are left out). Drop years whose top references are generic tools of the parent field (software, solvers and standard methods: a DFT functional, a FEM code, an ASTM test method). Keep topic precursors and the parent field's founding papers. List kept years in `evidence.rpys_years`.
 - Main path: a key-route path inside the field (seeds and citing papers); earlier history is in RPYS and the core ancestors. If it still detours through a neighbouring community, show the topic-specific tail (`evidence.main_path_tail`) and say what was cut in `main_path_note`.
 - Clusters: the printed words are the ones over-represented in each cluster against the field; label each by what its members do (`evidence.cluster_labels`).
 - Seeds that predate the topic (method papers when the topic is method × new tool) make a corpus about the parent field: check how many citing papers match the topic (`lineage mentions data "<regex>"`). When few do, add a recent seed from the intersection or widen with tested queries before reading the analysis as the topic's flow.

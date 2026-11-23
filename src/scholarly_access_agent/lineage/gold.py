@@ -5,7 +5,7 @@ recall on it is circular. Freeze a list built independently instead, e.g. the pa
 independent reviews, before testing queries.
 
 Usage:
-  lineage gold freeze DATA_DIR --from-file FILE [--note 'a-SiO2 papers cited by both Review A and Review B']
+  lineage gold freeze DATA_DIR --from-file FILE [--note 'papers on the topic cited by both Review A and Review B']
 FILE: one OpenAlex ID (W123, https://openalex.org/W123) or DOI (10.x/..., https://doi.org/...) per line;
 blank lines and text after '#' are ignored. DOIs are resolved to OpenAlex IDs (network); unresolved ones are kept
 in gold.json under "unresolved" and reported.

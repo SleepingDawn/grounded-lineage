@@ -56,5 +56,61 @@ class PublicTextTests(unittest.TestCase):
                 self.assertEqual(public.download_public_pdf("https://arxiv.org/abs/2405.07105", download_dir=Path(directory))["status"], "not_pdf")
 
 
+class EngineeringRepositoryTests(unittest.TestCase):
+    """Engineering open repositories: landing page -> abstract via read_url, public PDF found from the page."""
+
+    def test_engineering_hosts_are_allowed_and_lookalikes_are_not(self):
+        for url in ("https://engrxiv.org/preprint/view/3000", "https://hal.science/hal-05729555v1",
+                    "https://www.osti.gov/biblio/3739948", "https://ntrs.nasa.gov/citations/20230005410",
+                    "https://aclanthology.org/N19-1423/", "https://openaccess.thecvf.com/content/x.html"):
+            self.assertTrue(public.is_public_url(url), url)
+        self.assertFalse(public.is_public_url("https://hal.science.evil.com/x"))
+        self.assertFalse(public.is_public_url("http://www.osti.gov/biblio/1"))
+        self.assertFalse(public.is_public_url("https://www.techrxiv.org/doi/full/10.36227/x"))  # blocks bots
+
+    def test_pdf_link_found_on_landing_page(self):
+        meta = '<meta name="citation_pdf_url" content="https://hal.science/hal-1/document">'
+        self.assertEqual(public.pdf_link_in(meta, "https://hal.science/hal-1v1"), "https://hal.science/hal-1/document")
+        flipped = '<meta content="/servlets/purl/42" name="citation_pdf_url">'
+        self.assertEqual(public.pdf_link_in(flipped, "https://www.osti.gov/biblio/42"), "https://www.osti.gov/servlets/purl/42")
+        # no meta tag: a .pdf link named like the page (ACL, CVF), not an unrelated supplement
+        page = "https://openaccess.thecvf.com/content/html/Smith_Crack_Segmentation_paper.html"
+        links = '<a href="../papers/Smith_Crack_Segmentation_paper.pdf">pdf</a><a href="../sup/other.pdf">sup</a>'
+        self.assertEqual(public.pdf_link_in(links, page), "https://openaccess.thecvf.com/content/papers/Smith_Crack_Segmentation_paper.pdf")
+        # a PDF off the allow list (or plain http) is never returned
+        off = '<meta name="citation_pdf_url" content="http://www.cv-foundation.org/x.pdf">'
+        self.assertIsNone(public.pdf_link_in(off, "https://openaccess.thecvf.com/content/html/x.html"))
+
+    def test_landing_page_download_and_library_fallback(self):
+        landing = ('<html><meta name="citation_pdf_url" content="https://engrxiv.org/preprint/download/3000/5505">'
+                   '</html>').encode()
+
+        def fake_fetch(url, limit, timeout):
+            if url.endswith("/view/3000"):
+                return landing, url, "text/html; charset=utf-8"
+            return b"%PDF-1.7 x", url, "application/pdf"
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(public, "_fetch", side_effect=fake_fetch):
+            got = public.public_pdf_attempt("https://engrxiv.org/preprint/view/3000", download_dir=Path(directory))
+            self.assertTrue(got["ok"])
+            self.assertTrue(got["output_path"].endswith("engrxiv_3000.pdf"))  # named after the page, not "5505"
+        no_pdf = (b"<html>no link here</html>", "https://hal.science/hal-9", "text/html")
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(public, "_fetch", return_value=no_pdf):
+            # landing page without a public PDF: None, so the caller tries the library route instead
+            self.assertIsNone(public.public_pdf_attempt("https://hal.science/hal-9", download_dir=Path(directory)))
+        with mock.patch.object(public, "_fetch", side_effect=AssertionError("not fetched")):
+            self.assertIsNone(public.public_pdf_attempt("https://ieeexplore.ieee.org/document/1", download_dir=Path(".")))
+
+
+class PreprintHostTests(unittest.TestCase):
+    def test_engineering_preprint_servers_are_recognised(self):
+        from scholarly_access_agent.lineage import links
+        for url in ("https://www.techrxiv.org/doi/full/10.36227/x", "https://engrxiv.org/preprint/view/1"):
+            self.assertTrue(links.PREPRINT_HOST.search(url), url)
+        self.assertFalse(links.PREPRINT_HOST.search("https://ieeexplore.ieee.org/document/1"))
+        self.assertTrue(links.is_preprint_doi("10.36227/techrxiv.1"))
+        self.assertTrue(links.is_preprint_doi("10.31224/3000"))
+        self.assertFalse(links.is_preprint_doi("10.1109/TPEL.2020.1"))
+
+
 if __name__ == "__main__":
     unittest.main()

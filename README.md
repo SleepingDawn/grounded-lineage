@@ -105,7 +105,7 @@ All commands are `scholarly-access-agent <command>`; `<command> -h` lists option
 | | `add-domain` | Add a domain to the SNU proxy list |
 | Access & reading | `check-url`, `proxy-url`, `open-url` | Proxy support check, proxied URL, open in the persistent profile |
 | | `resolve` | DOI → Crossref record, open copies, ranked reading routes |
-| | `read-url` | Text-first reading of open-access HTML (arXiv, PMC, Europe PMC, chemRxiv, bioRxiv, medRxiv) |
+| | `read-url` | Text-first reading of open repositories (arXiv, PMC, Europe PMC, chemRxiv, bioRxiv, medRxiv; engineering: engrXiv, HAL, OSTI, NASA NTRS, ACL Anthology, CVF) |
 | | `discover-pdfs`, `download-pdf`, `download-many` | Find PDF links; download one, or a JSONL batch in one browser context |
 | | `read-pdf` | Page-grounded excerpts by `terms` or by `pages` (never both) |
 | | `pack reader` | Print the reader pack byte for byte (`--check`: hash and size) |

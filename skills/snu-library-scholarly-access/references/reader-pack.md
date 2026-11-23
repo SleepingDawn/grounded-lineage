@@ -21,7 +21,7 @@ Everything a reading or locating sub-agent needs, in one block. The lead pastes 
 
 ## Tools
 
-- `read_url(url)` only for arXiv, PMC, Europe PMC, chemRxiv, bioRxiv, medRxiv: first without arguments (outline, abstract, figure captions), then `terms=[...]` to locate, then `sections=[...]` to read a section whole.
+- `read_url(url)` only for arXiv, PMC, Europe PMC, chemRxiv, bioRxiv, medRxiv and the engineering repositories engrXiv, HAL, OSTI, NASA NTRS, ACL Anthology, CVF open access (landing pages give the abstract; `download_pdf` on the same page fetches the public PDF): first without arguments (outline, abstract, figure captions), then `terms=[...]` to locate, then `sections=[...]` to read a section whole.
 - `download_pdf(url[, pdf_url])` for publisher and repository PDFs (APS: pass the abstract URL; DSpace: the handle URL plus the content link from `resolve`), then `read_pdf(path, terms=[...])` to locate, then `read_pdf(path, pages="4-5")` to read pages whole. Use `terms` or `pages`, never both.
 - Locating (`terms`) is not reading. A judgment that rests only on term excerpts is `read_mode: terms`.
 

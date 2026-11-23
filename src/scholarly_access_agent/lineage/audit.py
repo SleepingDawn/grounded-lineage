@@ -201,7 +201,7 @@ def era_balance(L, work: Path, today: int | None = None) -> tuple[list[str], lis
         if focus != "current" and k_in < 2:
             names = "; ".join(" | ".join(s.split(" | ")[::2])[:70] for s in missing[:3])
             warns.append(f"era_founders_thin: {k_in} of the field's 10 most-cited ancestors are boxes (missing e.g. "
-                         f"{names}); add the founding works (generic tools such as DFT functionals or codes can stay "
+                         f"{names}); add the founding works (generic tools such as software, solvers or standard test methods can stay "
                          "out), or set meta.era_focus 'current' with meta.era_note if the question is only about now")
     line = (f"era: {share:.0%} of {len(years)} field papers from {lo}-{today}, {tree_recent}/{len(studies)} boxes; "
             + (f"{k_in}/10 most-cited ancestors are boxes; " if k_in is not None else "")

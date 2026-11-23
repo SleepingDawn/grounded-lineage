@@ -1,7 +1,7 @@
 # lineage.json
 
 The agent-curated input to `lineage page` and `lineage report-section`. Lives in the topic work folder next to `data/`.
-Text fields accept `**bold**`; everything else is escaped. Full examples: `examples/les/lineage.json` (lineage mode), `examples/transit/lineage.json` (topic mode, below).
+Text fields accept `**bold**`; everything else is escaped. Full examples: `examples/les/lineage.json` (lineage mode, a computational-materials method), `examples/transit/lineage.json` (topic mode, transport policy, below). The snippets below come from the LES example; they show the format, not what lanes, vocabulary or verdicts should be: those come from your topic, in any engineering field.
 
 ```jsonc
 {

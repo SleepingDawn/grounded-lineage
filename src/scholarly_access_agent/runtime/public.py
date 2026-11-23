@@ -18,6 +18,13 @@ PUBLIC_HOSTS = {
     "arxiv.org", "www.arxiv.org", "export.arxiv.org",
     "pmc.ncbi.nlm.nih.gov", "www.ncbi.nlm.nih.gov", "europepmc.org",
     "chemrxiv.org", "www.biorxiv.org", "www.medrxiv.org",
+    # engineering repositories, each checked for a readable landing page and a public PDF (2026-11-24):
+    "engrxiv.org",                  # engineering preprints (all disciplines)
+    "hal.science",                  # HAL, multidisciplinary, strong in engineering
+    "www.osti.gov",                 # US DOE technical reports and accepted manuscripts
+    "ntrs.nasa.gov",                # NASA technical reports (aerospace)
+    "aclanthology.org",             # computational linguistics / NLP proceedings
+    "openaccess.thecvf.com",        # computer vision proceedings (CVPR, ICCV, WACV)
 }
 USER_AGENT = "snu-research-agent/0.3 (scholarly evidence reader)"
 MAX_HTML_BYTES = 20 * 1024 * 1024
@@ -270,8 +277,52 @@ def read_url(
     return result
 
 
+PDF_META = (re.compile(r'<meta[^>]+name=["\']citation_pdf_url["\'][^>]*content=["\']([^"\']+)["\']', re.I),
+            re.compile(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]*name=["\']citation_pdf_url["\']', re.I))
+
+
+def pdf_link_in(html: str, page_url: str) -> str | None:
+    """The public PDF a repository landing page points to, host-independent: the `citation_pdf_url` meta tag
+    (Highwire tags, read by Google Scholar), else a `.pdf` link whose file name contains the page's own name.
+    Only an allow-listed HTTPS URL is returned."""
+    cands = [urljoin(page_url, m.group(1).replace("&amp;", "&")) for rx in PDF_META for m in [rx.search(html)] if m]
+    stem = Path(urlparse(page_url).path.rstrip("/")).stem.lower()
+    if stem:
+        for href in re.findall(r'href=["\']([^"\']+\.pdf)["\']', html, re.I):
+            link = urljoin(page_url, href)
+            if stem in Path(urlparse(link).path).stem.lower():
+                cands.append(link)
+    return next((c for c in cands if is_public_url(c)), None)
+
+
+def _page_name(path: str) -> str:
+    p = Path(path.rstrip("/"))
+    return p.stem if p.suffix.lower() in (".html", ".htm", ".php", ".aspx") else p.name
+
+
+def public_pdf_attempt(url: str, *, download_dir: Path, timeout_seconds: int = 30) -> dict[str, object] | None:
+    """Result of the direct public route, or None when the library route should be used instead: the URL is not
+    on the allow list, or it is a landing page whose public PDF could not be found (the library may still have
+    it). A direct PDF URL on the allow list is final either way."""
+    direct = pdf_url_for(url)
+    if not (is_public_url(url) or (direct and is_public_url(direct))):
+        return None
+    result = download_public_pdf(url, download_dir=download_dir, timeout_seconds=timeout_seconds)
+    if result.get("ok") or (direct and is_public_url(direct)):
+        return result
+    return None
+
+
 def download_public_pdf(url: str, *, download_dir: Path, timeout_seconds: int = 30) -> dict[str, object]:
     pdf_url = pdf_url_for(url)
+    if not pdf_url and is_public_url(url):
+        # a repository landing page: find the PDF it points to
+        try:
+            body, final, ctype = _fetch(url, MAX_HTML_BYTES, timeout_seconds)
+        except Exception as exc:
+            return {"ok": False, "provider": "public", "source_url": url, "status": "unsupported",
+                    "reason": "landing_unreadable", "error": type(exc).__name__, "download_dir": str(download_dir)}
+        pdf_url = final if body[:5] == b"%PDF-" else pdf_link_in(body.decode(_charset(ctype), errors="replace"), final)
     if not pdf_url or not is_public_url(pdf_url):
         return {"ok": False, "provider": "public", "source_url": url, "status": "unsupported",
                 "reason": "no_public_pdf", "download_dir": str(download_dir)}
@@ -281,7 +332,12 @@ def download_public_pdf(url: str, *, download_dir: Path, timeout_seconds: int = 
                 "pdf_url": final, "download_dir": str(download_dir)}
     download_dir.mkdir(parents=True, exist_ok=True)
     found = arxiv_id(pdf_url)
-    stem = (found[0] + found[1]).replace("/", "_") if found else Path(urlparse(final).path).stem
+    page = urlparse(url)
+    # a PDF found through a landing page often has a generic name ("document", "5505"): name it after the page
+    named_by_page = pdf_url_for(url) is None and page.path.strip("/")
+    stem = ((found[0] + found[1]).replace("/", "_") if found
+            else page.netloc.split(".")[-2] + "_" + _page_name(page.path) if named_by_page
+            else Path(urlparse(final).path).stem)
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or "article"
     path = download_dir / f"{name}.pdf"
     index = 1

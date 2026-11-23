@@ -18,8 +18,11 @@ from pathlib import Path
 
 from .openalex import get, short
 
-PREPRINT_DOI = ("10.48550/", "10.5281/", "10.21203/", "10.26434/", "10.1101/", "10.2139/", "10.22541/")
-PREPRINT_HOST = re.compile(r"arxiv\.org|chemrxiv|biorxiv|medrxiv|researchsquare|zenodo|ssrn|authorea", re.I)
+# preprint servers, including engineering ones: TechRxiv (10.36227), engrXiv (10.31224), Preprints.org (10.20944)
+PREPRINT_DOI = ("10.48550/", "10.5281/", "10.21203/", "10.26434/", "10.1101/", "10.2139/", "10.22541/",
+                "10.36227/", "10.31224/", "10.20944/")
+PREPRINT_HOST = re.compile(r"arxiv\.org|chemrxiv|biorxiv|medrxiv|researchsquare|zenodo|ssrn|authorea|techrxiv|engrxiv"
+                           r"|preprints\.org|essopenarchive", re.I)
 
 
 def norm(t):

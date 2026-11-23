@@ -218,7 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
                                   help="Text budget (default: 4000 with --terms, 16000 for --pages).")
 
     read_url_command = subcommands.add_parser(
-        "read-url", help="Text-first reading of open-access HTML full text (arXiv, PMC) with section names.",
+        "read-url", help="Text-first reading of open repositories (arXiv, PMC, engrXiv, HAL, OSTI, NTRS, ACL, CVF) with section names.",
     )
     read_url_command.add_argument("url", help="arXiv abs/pdf/html URL or another open-repository article URL.")
     read_url_command.add_argument("--terms", nargs="+", help="Up to 12 terms to locate (excerpts with section names).")
@@ -433,10 +433,10 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "download-pdf":
         pdf_url = getattr(args, "pdf_url", None) or None
-        from scholarly_access_agent.runtime.public import download_public_pdf, is_public_url, pdf_url_for
-        public_target = pdf_url_for(pdf_url or args.url)
-        if public_target and is_public_url(public_target):
-            public = download_public_pdf(public_target, download_dir=args.download_dir, timeout_seconds=args.timeout_seconds)
+        from scholarly_access_agent.runtime.public import public_pdf_attempt
+        public = public_pdf_attempt(pdf_url or args.url, download_dir=args.download_dir,
+                                    timeout_seconds=args.timeout_seconds)
+        if public is not None:
             write_json(public)
             return 0 if public["ok"] else 1
         result = download_pdf(

@@ -11,7 +11,7 @@ Every run is appended to DATA_DIR/adoption.json with its regexes, roles, counts 
 ("adoption#3") that the verdict text can cite.
 
 Usage:
-  lineage adoption DATA_DIR --scope 'silica|SiO2' --method 'machine.learn|neural network|NEP|GAP' [--since 2018]
+  lineage adoption DATA_DIR --scope 'lithium.ion|Li-ion' --method 'physics.informed|neural network' [--since 2018]
                    [--founders W1,W2 | --lineage lineage.json] [--list]
 Matching is case-insensitive over title + abstract. Papers without an abstract in OpenAlex are matched on the
 title only, so counts are lower bounds (their number is reported).

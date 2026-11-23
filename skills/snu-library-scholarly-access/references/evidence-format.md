@@ -26,6 +26,8 @@ Use a Markdown table for readers; keep JSON when reproducibility/export is reque
              "verified_by": null}]
 ```
 
+The same shape holds in any engineering field, e.g. `{"id": "fl300", "quantity": "fatigue life", "value": 1.2e6, "unit": "cycles", "condition": "Ti-6Al-4V, 300 MPa, R = 0.1, as-built", ...}` or `{"id": "eff1k", "quantity": "peak efficiency", "value": 98.7, "unit": "%", "condition": "GaN half-bridge, 1 kW, 400 V", ...}`.
+
 `value` is the number as printed (a range may be a string, "14-24"); `lo`/`hi` an uncertainty or range when given; `condition` what the number depends on (temperature, size, method, sample). A number you computed from the paper's numbers (a ratio, a difference) is not a result of that paper: write it in the report as your own calculation with its inputs cited. `source_file` (path inside the topic folder) lets `scholarly-access-agent evidence verify <topic folder> --write` re-read the page and confirm each value is printed there; it records `verified_by`.
 
 `venue_type` is what the item is, not where you read it (a journal article read on arXiv is still `journal` with `version: preprint`). `indexing` comes from the journal's listing (Web of Science, Scopus, KCI), checked once per journal; `unknown` when not checked. `evidence_role`: `empirical` measures or estimates the effect asked about, `model` derives it, `review` summarises others, `context` (history, governance, critique, commentary) explains the setting but is not evidence for an effect. Author names: as printed; Korean authors in Hangul with the romanised form the paper uses in parentheses, e.g. `이도경 (Lee, Dokyung)`.

@@ -29,8 +29,9 @@ Usage:
     queries.json, so saturation and recall stay those of the real queries.
 QUERY is OpenAlex boolean syntax: "exact phrase", AND, OR, NOT, parentheses. Commas are not allowed.
 Example (one concept block per parenthesis):
-  '("charge equilibration" OR "electronegativity equalization" OR "fluctuating charge" OR QEq)
-   AND ("neural network" OR "machine learning" OR "machine-learned") NOT (photovoltaic OR battery)'
+  '("topology optimization" OR "topology optimisation" OR SIMP OR "level set")
+   AND ("additive manufacturing" OR "3D printing" OR "overhang constraint") NOT ("network topology" OR graph)'
+Describe each concept by what the work does, not only by the topic's name: the name is one camp's word.
 """
 import argparse
 import datetime
