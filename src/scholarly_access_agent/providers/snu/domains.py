@@ -74,6 +74,14 @@ def load_domains(path: Path) -> tuple[str, ...]:
 DEFAULT_DOMAINS: tuple[str, ...] = load_domains(_BUILTIN_DOMAINS_FILE)
 
 
+def current_domains() -> tuple[str, ...]:
+    """The domain list as it is on disk now (add_domain edits the file; DEFAULT_DOMAINS is the import-time copy)."""
+    try:
+        return load_domains(_BUILTIN_DOMAINS_FILE)
+    except (OSError, ValueError):
+        return DEFAULT_DOMAINS
+
+
 def add_domain(domain: str) -> dict[str, Any]:
     normalized = _domain_pattern_from_string(domain)
     if not normalized:

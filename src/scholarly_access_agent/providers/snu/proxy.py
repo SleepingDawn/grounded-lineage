@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from scholarly_access_agent.core.urls import (
@@ -9,7 +9,7 @@ from scholarly_access_agent.core.urls import (
     host_for_url,
 )
 from scholarly_access_agent.providers.snu.domains import (
-    DEFAULT_DOMAINS,
+    current_domains,
     load_domains,
 )
 
@@ -19,7 +19,8 @@ SNU_PROXY_BASE = "https://libproxy.snu.ac.kr/link.n2s?url="
 
 @dataclass(frozen=True)
 class SnuProxyProvider:
-    domains: tuple[str, ...] = DEFAULT_DOMAINS
+    # Read at construction, so a domain added with add_domain applies without restarting the server.
+    domains: tuple[str, ...] = field(default_factory=lambda: current_domains())
     proxy_base: str = SNU_PROXY_BASE
     provider_id: str = "snu"
 

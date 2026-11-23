@@ -137,3 +137,17 @@ class SessionSecurityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AddDomainLiveTests(unittest.TestCase):
+    def test_provider_sees_domain_added_after_import(self):
+        from unittest import mock
+        from scholarly_access_agent.providers.snu import domains as dom
+        from scholarly_access_agent.providers.snu.proxy import SnuProxyProvider
+        with tempfile.TemporaryDirectory() as root:
+            f = Path(root) / "journal_domains.json"
+            f.write_text('{"domains": ["example.org"]}', encoding="utf-8")
+            with mock.patch.object(dom, "_BUILTIN_DOMAINS_FILE", f):
+                self.assertFalse(SnuProxyProvider().supports_url("https://repo.example.edu/x.pdf"))
+                dom.add_domain("repo.example.edu")
+                self.assertTrue(SnuProxyProvider().supports_url("https://repo.example.edu/x.pdf"))
