@@ -14,7 +14,7 @@ One run, one `run.jsonl` (playbook `topics`), one estimate, one checkpoint ①. 
 6. **Gap matrix and empty-cell check** — research-topic-scout steps 1–2.
 7. **Checkpoint ②.** Show: the axes, the matrix (compact), the directions the cards would take (5–8, or the reduced count), tokens spent vs estimate, remaining estimate. Option 1 (recommended): these axes and directions. Alternatives: different axes (name them), drop or add directions.
 8. **Cards, novelty, ranking, feasibility, critique, gate** — research-topic-scout steps 3–7. Apply the budget rule between steps.
-9. **Report and close** — research-topic-scout step 8. `scholarly-access-agent cost report --run <id>`; `run.jsonl` `event: done`. Then offer, one line each, the scout's after-report options: refine one card with ARS socratic; a weekly watch for competing work (needs the user's yes, also under auto-recommend).
+9. **Report and close** — research-topic-scout step 8, then one HTML page for the folder: write an overall summary file (4–6 cited bullets covering review and topics) and run `scholarly-access-agent report combine <Topic> --render --summary <file>`; deliver only `<Topic>.html`. `scholarly-access-agent cost report --run <id>`; `run.jsonl` `event: done`. Then offer, one line each, the scout's after-report options: refine one card with ARS socratic; a weekly watch for competing work (needs the user's yes, also under auto-recommend).
 
 Missing profile under auto-recommend: do not ask; proceed, list the missing items at the top of the topic report, and apply research-topic-scout's no-profile rules. Do not create the settings file from nothing.
 

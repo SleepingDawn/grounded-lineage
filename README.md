@@ -91,7 +91,7 @@ The `calculation` playbook turns a card or a paper's method into a calculation p
 6. **Report with citation keys.** The report cites `[@larkin2014, p.9]` or `[@liang2023#k350]`; rendering turns them into "(Larkin 외, 2014 [5], p.9)" and fills a reference table with the version read and the derived label.
 7. **Trace and verify.** `report trace` flags unknown keys, missing locators, numbers not in the cited records and uncited numbers in the summary; `evidence verify --write` re-reads each result's PDF page and records `verified_by`.
 8. **Figures planned per question.** For each section (reader question) decide figure, table or neither in `figs/figures.json`; write `figs/<name>.fig.json` specs whose rows name evidence records, and draw them with `viz figure`. Literal numbers and mixed units are rejected; read depth shows in the marks, the page in the tooltip.
-9. **Render.** `render-report` (MCP `render_report_pdf`) writes one HTML page; `![caption](figs/x.html)` embeds the flow map or a chart. Check `missing_glyphs` and `warnings`, then open it.
+9. **Render — one page per topic folder.** `report combine <Topic> --render` merges every report the run wrote (review, topic recommendations, novelty reports, calculation plans) into `<Topic>.md` and renders the one `<Topic>.html` the user receives (a lone review is rendered as it is; `render-report` / MCP `render_report_pdf` renders any single Markdown file); `![caption](figs/x.html)` embeds the flow map or a chart. Check `missing_glyphs` and `warnings`, then open it.
 
 ## CLI reference
 
@@ -112,6 +112,7 @@ All commands are `scholarly-access-agent <command>`; `<command> -h` lists option
 | Evidence & reports | `evidence lint` / `labels` / `verify` / `coverage` | Check records, derive read-depth labels, re-check results on the PDF page, summarise the measured search and the era balance of what was read |
 | | `refs check` | Compare records with Crossref by DOI (only DOIs are sent) |
 | | `report trace` | Trace citation keys and numbers back to records |
+| | `report combine` | Merge a topic folder's reports (`README.md`, `ideas/README.md`, `ideas/novelty-*.md`, `ideas/calc-*.md`) into `<Topic>.md`; `--render` makes the single `<Topic>.html` the user receives |
 | | `render-report` | Markdown report → standalone HTML (`--format pdf` adds an A4 PDF) |
 | Lineage | `lineage init` | Create the topic folder (`--no-lineage` for a plain review) |
 | | `lineage expand` | One-hop snowballing for a plain review: references and citing papers of a few seeds, ranked by seed links, screened papers hidden; saves them as `data/corpus.json` for query tests |

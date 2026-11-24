@@ -605,6 +605,28 @@ def render_warnings(markdown_path: str | Path) -> list[str]:
 
 # ---------------------------------------------------------------- cli
 
+def _combine_main(a) -> int:
+    from scholarly_access_agent.combine import combine_reports
+
+    try:
+        result = combine_reports(a.topic, a.parts, a.title, a.summary, a.output)
+    except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+        print(f"combine: {exc}", file=sys.stderr)
+        return 2
+    if a.render:
+        from scholarly_access_agent.runtime.report import render_report
+
+        result["render"] = render_report(result["output"])
+    if a.json:
+        print(json.dumps(result, ensure_ascii=False, indent=1))
+    else:
+        print(f"{result['mode']}: {', '.join(result['parts'])} -> {result['output']}")
+        if a.render:
+            r = result["render"]
+            print(f"rendered: {r.get('output_path')} (ok={r.get('ok')}); warnings: {len(r.get('warnings') or [])}")
+    return 0 if not a.render or result["render"].get("ok") else 1
+
+
 def main(argv=None) -> int:
     try:
         sys.stdout.reconfigure(errors="replace")
@@ -616,7 +638,21 @@ def main(argv=None) -> int:
     tr.add_argument("path", help="report Markdown file")
     tr.add_argument("--evidence", help="evidence folder (default: evidence/ next to the report or its parent)")
     tr.add_argument("--json", action="store_true", help="print JSON")
+    co = sub.add_parser("combine", help="Merge a topic folder's reports (README.md, ideas/README.md, "
+                                        "ideas/novelty-*.md, ideas/calc-*.md) into <Topic>.md; "
+                                        "--render makes the one HTML page.")
+    co.add_argument("topic", help="topic folder")
+    co.add_argument("--parts", nargs="+", help="report files relative to the topic folder, in order "
+                                               "(default: README.md ideas/README.md ideas/novelty-*.md "
+                                               "ideas/calc-*.md)")
+    co.add_argument("--title", help="title of the combined page (default: the first part's title)")
+    co.add_argument("--summary", help="Markdown file with an overall summary, placed before the parts")
+    co.add_argument("-o", "--output", help="combined Markdown path (default: <topic>/<Topic>.md)")
+    co.add_argument("--render", action="store_true", help="also render the combined page (HTML)")
+    co.add_argument("--json", action="store_true", help="print JSON")
     a = ap.parse_args(argv)
+    if a.command == "combine":
+        return _combine_main(a)
     path = Path(a.path).expanduser()
     if not path.is_file():
         print(f"not a file: {a.path}", file=sys.stderr)

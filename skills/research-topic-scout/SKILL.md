@@ -9,7 +9,7 @@ description: Use when the user wants research topics, open problems or next proj
 
 A review says what is known; this skill finds what is not, and recommends what the user can do about it. Input is a review folder made by snu-library-scholarly-access (`<research root>/<Topic>/` with `evidence/` and `README.md`); the skill reads those records instead of re-reading papers, and reads new text only to check empty cells and closest prior work. Output: `<Topic>/ideas/` with the gap matrix, question cards, novelty and feasibility checks, and a recommendation report.
 
-**REQUIRED SUB-SKILL:** snu-library-scholarly-access, for every paper read (access rules, version priority, evidence format) and the report (HTML via `render_report_pdf`). Models come from its `references/research-models.md`; roles are named below.
+**REQUIRED SUB-SKILL:** snu-library-scholarly-access, for every paper read (access rules, version priority, evidence format) and the report (one HTML page for the whole topic folder via `report combine --render`). Models come from its `references/research-models.md`; roles are named below.
 
 No review folder for the topic → run the review first (research-pilot `status` playbook or snu-library), then come back.
 
@@ -65,7 +65,7 @@ A card is **recommended** only when all five hold; otherwise its decision is `re
 5. **Next action:** a concrete task (a paper, a calculation, a dataset), not "read more".
 
 ### 8. Report
-`ideas/README.md` in the user's language: a short gap table — only the cells that fed a card (cell, state, why it is a gap, card) — then recommended cards first with evidence numbers `[n]` matching the review's reference list, then `read more` cards with what is missing, then dropped ideas with the reason. The full matrix stays in `ideas/matrix.md`, linked, not reproduced. Figures follow snu-library `report-pdf.md` (plan per question in `figs/figures.json`; draw only compared numbers). Include the overlap table per recommended card, the readiness checks, the model rows used, and estimated vs measured tokens. Render with `render_report_pdf` like the review (HTML by default). File the closest prior-work papers in ReadCube list `snu-research-agent/<Topic>` when its tools are available.
+`ideas/README.md` in the user's language: a short gap table — only the cells that fed a card (cell, state, why it is a gap, card) — then recommended cards first with evidence numbers `[n]` matching the review's reference list, then `read more` cards with what is missing, then dropped ideas with the reason. The full matrix stays in `ideas/matrix.md`, linked, not reproduced. Figures follow snu-library `report-pdf.md` (plan per question in `figs/figures.json`; draw only compared numbers). Include the overlap table per recommended card, the readiness checks, the model rows used, and estimated vs measured tokens. Do not render it as a page of its own: deliver the review and this report as one HTML page with `scholarly-access-agent report combine <Topic> --render --summary <file>` (snu-library `report-pdf.md`, "One HTML page per topic folder"), the summary file holding 4–6 cited bullets that cover both. File the closest prior-work papers in ReadCube list `snu-research-agent/<Topic>` when its tools are available.
 
 ## After the report (only when the user asks or accepts)
 
