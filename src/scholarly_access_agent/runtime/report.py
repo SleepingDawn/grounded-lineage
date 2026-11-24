@@ -656,6 +656,29 @@ def _citation_pass(source: Path) -> tuple[str | None, list[str]]:
         return None, [f"citation_pass_failed: {type(exc).__name__}"]
 
 
+def _markdown_pass(source: Path, text: str | None) -> tuple[str | None, list[str]]:
+    """(text with the blank lines Pandoc needs inserted, or `text` as given when nothing changed; warnings).
+
+    A table, list, heading or quote glued to the line above renders as plain text; the render
+    inserts the blank line so the page is right, and the warnings name the source lines to fix.
+    """
+    try:
+        from scholarly_access_agent.mdlint import fix_markdown, lint_markdown
+
+        raw = source.read_text(encoding="utf-8")
+        base = raw if text is None else text
+        fixed, _ = fix_markdown(base)
+        findings = lint_markdown(raw)
+        warnings = [f"markdown_{'blank_line_added' if f['fixable'] else 'lint'}: line {f['line']} "
+                    f"{f['rule']}: {f['message']}" for f in findings]
+        if findings:
+            warnings.append(f"markdown_source: fix the source ({source.name}, or the parts of a combined page) "
+                            "with `scholarly-access-agent report lint --fix <file or topic folder>`")
+        return (fixed if fixed != base else text), warnings
+    except Exception as exc:  # the lint must never break a render
+        return text, [f"markdown_lint_failed: {type(exc).__name__}"]
+
+
 def _evidence_lint_warnings(markdown_path: str | Path) -> list[str]:
     try:
         from scholarly_access_agent.evidence import lint_folder, summary_line
@@ -691,6 +714,8 @@ def _render_report(markdown_path: str | Path, output_path: str | Path | None = N
         return {"ok": False, "status": "invalid_input", "reason": str(exc)}
     notes: list[str] = []
     text, cite_warnings = _citation_pass(source)
+    text, markdown_warnings = _markdown_pass(source, text)
+    cite_warnings = markdown_warnings + cite_warnings
     extra = {"text": text} if text is not None else {}
     if engine != "reportlab":
         quarto = quarto_report.find_quarto()

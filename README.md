@@ -112,6 +112,7 @@ All commands are `scholarly-access-agent <command>`; `<command> -h` lists option
 | Evidence & reports | `evidence lint` / `labels` / `verify` / `coverage` | Check records, derive read-depth labels, re-check results on the PDF page, summarise the measured search and the era balance of what was read |
 | | `refs check` | Compare records with Crossref by DOI (only DOIs are sent) |
 | | `report trace` | Trace citation keys and numbers back to records |
+| | `report lint` | Flag Markdown that Pandoc prints as text (table, list, heading or quote with no blank line before it; rows with more cells than the header); `--fix` inserts the blank lines. `report trace` includes the same checks |
 | | `report combine` | Merge a topic folder's reports (`README.md`, `ideas/README.md`, `ideas/novelty-*.md`, `ideas/calc-*.md`) into `<Topic>.md`; `--render` makes the single `<Topic>.html` the user receives |
 | | `render-report` | Markdown report → standalone HTML (`--format pdf` adds an A4 PDF) |
 | Lineage | `lineage init` | Create the topic folder (`--no-lineage` for a plain review) |

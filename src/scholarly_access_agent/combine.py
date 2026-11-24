@@ -100,6 +100,14 @@ def _shifted(body: Iterable[str], part_dir: Path, topic: Path) -> list[str]:
     return out
 
 
+def _lint(paths: Sequence[Path], names: Sequence[str]) -> list[dict[str, Any]]:
+    """Markdown findings per source file (the parts to fix, not the generated page)."""
+    from scholarly_access_agent.mdlint import lint_markdown
+
+    return [{"file": name, **f} for p, name in zip(paths, names)
+            for f in lint_markdown(p.read_text(encoding="utf-8"))]
+
+
 def combine_reports(topic: str | Path, parts: Sequence[str | Path] | None = None, title: str | None = None,
                     summary: str | Path | None = None, output: str | Path | None = None) -> dict[str, Any]:
     topic = Path(topic).expanduser().resolve()
@@ -118,13 +126,19 @@ def combine_reports(topic: str | Path, parts: Sequence[str | Path] | None = None
     if out in [p.resolve() for p in paths]:
         raise ValueError(f"output {out} would overwrite one of its parts")
     rel = [p.resolve().relative_to(topic).as_posix() if p.resolve().is_relative_to(topic) else str(p) for p in paths]
+    sources, names = list(paths), list(rel)
+    if summary is not None:
+        s = Path(summary).expanduser().resolve()
+        sources.append(s)
+        names.append(s.relative_to(topic).as_posix() if s.is_relative_to(topic) else str(s))
+    lint = _lint(sources, names)
 
     if len(paths) == 1 and summary is None and title is None:
         text = paths[0].read_text(encoding="utf-8")
         if paths[0].parent.resolve() != out.parent:
             text = "\n".join(_rebase_links(l, paths[0].parent.resolve(), out.parent) for l in text.splitlines()) + "\n"
         out.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
-        return {"ok": True, "output": str(out), "parts": rel, "mode": "single"}
+        return {"ok": True, "output": str(out), "parts": rel, "mode": "single", "lint": lint}
 
     split = [_split(p.read_text(encoding="utf-8")) for p in paths]
     doc_title = title or split[0]["title"] or topic.name
@@ -142,4 +156,4 @@ def combine_reports(topic: str | Path, parts: Sequence[str | Path] | None = None
     ref_heading = next((s["ref_heading"] for s in split if s["ref_heading"]), "References")
     doc += [f"## {ref_heading}", "", REFERENCES, ""]
     out.write_text("\n".join(doc), encoding="utf-8")
-    return {"ok": True, "output": str(out), "parts": rel, "mode": "combined"}
+    return {"ok": True, "output": str(out), "parts": rel, "mode": "combined", "lint": lint}

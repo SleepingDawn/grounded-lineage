@@ -1,6 +1,7 @@
 """Citation keys in report Markdown: render them in house style and trace them back to records.
 
   scholarly-access-agent report trace <report.md> [--evidence DIR] [--json]
+  scholarly-access-agent report lint <report.md | topic folder>... [--fix] [--json]
 
 A report cites an evidence record by its file stem: `[@larkin2014]`, `[@larkin2014, p.9]`,
 `[@larkin2014, §IV.A]`, a stored result `[@larkin2014#k300]`, several at once
@@ -9,6 +10,8 @@ number = order of first citation) and a `<!-- references -->` line with a number
 `trace` checks every cited sentence: unknown keys or result ids (error), locators the record
 does not have (warning), numbers that appear in none of the cited records (warning) and
 uncited numbers in the summary section (warning). Code spans and fenced blocks are left alone.
+`trace` and `lint` also flag Markdown that Pandoc prints as plain text: a table, list, heading
+or quote with no blank line before it, and table rows with more cells than the header (mdlint).
 """
 from __future__ import annotations
 
@@ -576,12 +579,16 @@ def trace_report(markdown_path: str | Path, evidence_dir: str | Path | None = No
     # figures: `![..](figs/x.html)` with a sibling figs/x.fig.json must resolve to evidence like a citation
     from scholarly_access_agent.viz.figure import check_report
     figures = check_report(text, path.parent, records)
-    if figures:
-        result["findings"] = sorted(result["findings"] + figures, key=lambda f: f["line"])
+    # Markdown structure: tables, lists, headings or quotes Pandoc would print as text
+    from scholarly_access_agent.mdlint import lint_markdown
+    markdown = lint_markdown(text)
+    if figures or markdown:
+        result["findings"] = sorted(result["findings"] + figures + markdown, key=lambda f: f["line"])
         for level in ("error", "warning"):
             result["summary"][level + "s"] = sum(1 for f in result["findings"] if f["level"] == level)
         result["ok"] = result["summary"]["errors"] == 0
     result["summary"]["figure_findings"] = len(figures)
+    result["summary"]["markdown_findings"] = len(markdown)
     return {"report": str(path), "evidence_folder": str(folder) if folder else None, **result}
 
 
@@ -621,10 +628,58 @@ def _combine_main(a) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=1))
     else:
         print(f"{result['mode']}: {', '.join(result['parts'])} -> {result['output']}")
+        if result["lint"]:
+            print(ev._table(["file", "line", "rule", "message"],
+                            ([f["file"], f["line"], f["rule"], f["message"]] for f in result["lint"])))
+            print(f"markdown lint: {len(result['lint'])} finding(s) in the parts; the render inserts the "
+                  f"blank lines, fix the sources with `scholarly-access-agent report lint --fix {a.topic}`")
         if a.render:
             r = result["render"]
             print(f"rendered: {r.get('output_path')} (ok={r.get('ok')}); warnings: {len(r.get('warnings') or [])}")
     return 0 if not a.render or result["render"].get("ok") else 1
+
+
+def _lint_main(a) -> int:
+    from scholarly_access_agent.combine import default_parts
+    from scholarly_access_agent.mdlint import fix_markdown, lint_markdown
+
+    files: list[Path] = []
+    for raw in a.paths:
+        p = Path(raw).expanduser()
+        if p.is_dir():
+            files += default_parts(p.resolve()) or sorted(p.glob("*.md"))
+        elif p.is_file():
+            files.append(p)
+        else:
+            print(f"not a file or folder: {raw}", file=sys.stderr)
+            return 2
+    findings: list[dict[str, Any]] = []
+    added = 0
+    for p in files:
+        data = p.read_bytes().decode("utf-8")
+        eol = "\r\n" if "\r\n" in data else "\n"
+        text = data.replace("\r\n", "\n")
+        if a.fix:
+            new, found = fix_markdown(text)
+            if new != text:
+                with open(p, "w", encoding="utf-8", newline="") as fh:
+                    fh.write(new.replace("\n", eol))
+                added += sum(1 for f in found if f["fixable"])
+            text = new
+        findings += [{"file": str(p), **f} for f in lint_markdown(text)]
+    if a.json:
+        print(json.dumps({"files": [str(p) for p in files], "findings": findings, "blank_lines_added": added},
+                         ensure_ascii=False, indent=1))
+    else:
+        if findings:
+            print(ev._table(["file", "line", "rule", "message", "text"],
+                            ([f["file"], f["line"], f["rule"], f["message"], f["sentence"]] for f in findings)))
+            print()
+        fixable = sum(1 for f in findings if f["fixable"])
+        print(f"{len(findings)} finding(s) in {len(files)} file(s)"
+              + (f"; {added} blank line(s) added" if a.fix else
+                 f"; {fixable} fixable with --fix" if fixable else ""))
+    return 1 if findings else 0
 
 
 def main(argv=None) -> int:
@@ -650,9 +705,18 @@ def main(argv=None) -> int:
     co.add_argument("-o", "--output", help="combined Markdown path (default: <topic>/<Topic>.md)")
     co.add_argument("--render", action="store_true", help="also render the combined page (HTML)")
     co.add_argument("--json", action="store_true", help="print JSON")
+    li = sub.add_parser("lint", help="Check report Markdown for blocks Pandoc prints as text (a table, list, "
+                                     "heading or quote without a blank line before it) and table rows with "
+                                     "more cells than the header; exit 1 on findings.")
+    li.add_argument("paths", nargs="+", help="Markdown files or topic folders (a folder: the parts "
+                                             "`report combine` merges)")
+    li.add_argument("--fix", action="store_true", help="insert the missing blank lines in place")
+    li.add_argument("--json", action="store_true", help="print JSON")
     a = ap.parse_args(argv)
     if a.command == "combine":
         return _combine_main(a)
+    if a.command == "lint":
+        return _lint_main(a)
     path = Path(a.path).expanduser()
     if not path.is_file():
         print(f"not a file: {a.path}", file=sys.stderr)
