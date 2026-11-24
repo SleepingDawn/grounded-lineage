@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-from .openalex import get, short
+from .openalex import NotFound, get, get_work, short
 
 # preprint servers, including engineering ones: TechRxiv (10.36227), engrXiv (10.31224), Preprints.org (10.20944)
 PREPRINT_DOI = ("10.48550/", "10.5281/", "10.21203/", "10.26434/", "10.1101/", "10.2139/", "10.22541/",
@@ -37,9 +37,12 @@ def is_preprint_doi(doi):
 def work(wid):
     """Single-work lookup through the shared backoff/quota handling."""
     res = get({"filter": f"openalex_id:{short(wid)}", "per-page": 1})["results"]
-    if not res:
-        raise KeyError(f"{wid} not found in OpenAlex")
-    return res[0]
+    if res:
+        return res[0]
+    try:  # the filter index can lag behind the entity endpoint for new or merged records
+        return get_work(wid)
+    except NotFound:
+        raise KeyError(f"{wid} not found in OpenAlex") from None
 
 
 def venue(loc):
@@ -89,11 +92,18 @@ def main(argv=None):
     res = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
     args = argv[1:]
     ids = ids_from_lineage(args[1]) if args[:1] == ["--from-lineage"] else args
+    unresolved = []
     for wid in ids:
         wid = short(wid)
         if wid in res:
             continue
-        w = work(wid)
+        try:
+            w = work(wid)
+        except KeyError:
+            unresolved.append(wid)  # not saved, so a rerun tries it again
+            print(f"warning: {wid} not found in OpenAlex (filter index and /works/{wid}); skipped",
+                  file=sys.stderr)
+            continue
         a = w.get("authorships") or []
         first = a[0]["author"]["display_name"] if a else ""
         info = resolve(w)
@@ -102,4 +112,8 @@ def main(argv=None):
         res[wid] = info
         out.write_text(json.dumps(res, indent=1, ensure_ascii=False), encoding="utf-8")  # save as we go
         print(f"{wid} [{info['kind']:8}] {info['venue']} | {info['url']} | {(info['title'] or '')[:60]}")
+    if unresolved:
+        print(f"unresolved: {' '.join(unresolved)} (add a link_overrides entry in lineage.json or rerun later)",
+              file=sys.stderr)
+    return 0
 

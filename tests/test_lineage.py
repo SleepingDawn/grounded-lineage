@@ -85,6 +85,68 @@ class OpenAlexClientTests(unittest.TestCase):
             openalex.check_query('"a" OR b, c')
 
 
+def openalex_work(wid, doi, title, venue="Nature Computational Science"):
+    """A works record shaped like OpenAlex's (fields links.py reads, plus their siblings)."""
+    source = {"display_name": venue, "type": "journal"}
+    return {"id": f"https://openalex.org/{wid}", "doi": f"https://doi.org/{doi}", "title": title,
+            "publication_year": 2026, "cited_by_count": 7, "type": "article",
+            "authorships": [{"author": {"display_name": "Ada Lovelace"}}, {"author": {"display_name": "B. Babbage"}}],
+            "primary_location": {"source": source, "landing_page_url": f"https://doi.org/{doi}"},
+            "locations": [{"source": source, "landing_page_url": f"https://doi.org/{doi}"}]}
+
+
+class LinksLookupTests(unittest.TestCase):
+    """`lineage links` must not stop at a work the OpenAlex filter index has not caught up with."""
+
+    def run_links(self, fake_request, ids):
+        from scholarly_access_agent.lineage import links
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "links.json"
+            err = io.StringIO()
+            with mock.patch.object(openalex, "_request", side_effect=fake_request), \
+                    quiet(), contextlib.redirect_stderr(err):
+                code = links.main([str(out), *ids])
+            saved = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+        return code, saved, err.getvalue()
+
+    def test_work_missing_from_filter_index_is_read_from_entity_endpoint(self):
+        record = openalex_work("W7102614548", "10.1038/s41524-099-00001-x", "Cross learning between theories")
+
+        def fake(params, timeout=60, endpoint="works"):
+            if endpoint == "works":                       # filter index has not caught up
+                return 200, {}, {"results": [], "meta": {"count": 0}}
+            if endpoint == "works/W7102614548":
+                return 200, {}, record
+            raise AssertionError(f"unexpected endpoint {endpoint}")
+
+        code, saved, _ = self.run_links(fake, ["W7102614548"])
+        self.assertEqual(code, 0)
+        self.assertEqual(saved["W7102614548"]["url"], "https://doi.org/10.1038/s41524-099-00001-x")
+        self.assertEqual(saved["W7102614548"]["kind"], "journal")
+        self.assertEqual(saved["W7102614548"]["first_author"], "Ada Lovelace")
+
+    def test_unknown_work_is_skipped_once_and_the_rest_still_resolve(self):
+        found = openalex_work("W2", "10.1103/physrevb.1.2", "Second paper", venue="Physical Review B")
+        entity_calls = []
+
+        def fake(params, timeout=60, endpoint="works"):
+            if endpoint == "works":
+                hit = [found] if params.get("filter") == "openalex_id:W2" else []
+                return 200, {}, {"results": hit, "meta": {"count": len(hit)}}
+            if endpoint == "works/W1":
+                entity_calls.append(endpoint)
+                if len(entity_calls) > 1:
+                    raise AssertionError("a 404 was retried")
+                return 404, {}, {}
+            raise AssertionError(f"unexpected endpoint {endpoint}")
+
+        code, saved, err = self.run_links(fake, ["W1", "W2"])
+        self.assertEqual(code, 0)
+        self.assertNotIn("W1", saved)                     # left out, so a rerun tries it again
+        self.assertEqual(saved["W2"]["url"], "https://doi.org/10.1103/physrevb.1.2")
+        self.assertIn("W1", err)
+
+
 def fake_sorted_get(cited, newest, count=999):
     """OpenAlex stand-in: answers by the requested sort order; records every request."""
     calls = []

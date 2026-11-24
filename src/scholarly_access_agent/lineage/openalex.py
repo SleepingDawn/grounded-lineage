@@ -35,6 +35,10 @@ class OpenAlexError(RuntimeError):
     pass
 
 
+class NotFound(OpenAlexError):
+    """HTTP 404: the record does not exist, so the request is not retried."""
+
+
 def short(wid: str) -> str:
     return wid.rsplit("/", 1)[-1]
 
@@ -84,6 +88,8 @@ def get(params: dict, tries: int = 8, sleep=time.sleep, endpoint: str = "works")
         if status == 200:
             sleep(0.12)  # stay under ~10 requests/s
             return body
+        if status == 404:
+            raise NotFound(f"OpenAlex has no record at {endpoint}")
         if status == 429:
             wait = float(headers.get("Retry-After") or min(60, 2 ** (i + 1)))
             if wait > 120:
@@ -96,6 +102,12 @@ def get(params: dict, tries: int = 8, sleep=time.sleep, endpoint: str = "works")
             sleep(2 * (i + 1))
     raise OpenAlexError(f"OpenAlex request failed (HTTP {status}) after {tries} tries "
                         f"(filter={str(params.get('filter', ''))[:80]!r})")
+
+
+def get_work(wid: str) -> dict:
+    """One work from the entity endpoint (/works/<ID>), which also serves records the
+    filter index has not caught up with yet; raises NotFound when there is none."""
+    return get({}, endpoint=f"works/{short(wid)}")
 
 
 def fetch_many(ids, fields: str = FIELDS, on_chunk=None, progress=None) -> dict:
