@@ -16,7 +16,7 @@ Everything a reading or locating sub-agent needs, in one block. The lead pastes 
 - `scholarly-access-agent resolve <DOI>` lists the open copies (Unpaywall), the publisher route and a DSpace file link in one call. Use it before trying publisher pages.
 - Elsevier (ScienceDirect) and Springer Nature subscription text must not be sent to an external AI even when the SNU session serves it: use an open copy or report the limitation.
 - `blocked` / `bot_challenge`: a publisher bot check. Never solve or bypass it, do not retry in a loop; try the open copies, else record `RETRIEVAL_FAILED (access restriction: bot check)`.
-- `login_required`: stop that paper and report it; the lead asks the user to renew the session.
+- `login_required` (the result then carries `user_action_required`): stop that paper, keep going with open copies for the others, and make `LOGIN_EXPIRED: <login_alert.relogin_command>` the first line of your final message; the lead tells the user at once.
 - `unsupported_domain`: report the host; never call `add_domain` (it needs the user's approval).
 
 ## Tools

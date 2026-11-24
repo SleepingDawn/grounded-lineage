@@ -44,7 +44,7 @@ profile:                    # used by topics; reused every run
 
 ## Checkpoints
 
-A playbook stops only at its checkpoints, never elsewhere: not for reversible choices, not for routine access failures (record them and move on). The exceptions are the access rules in snu-library (login renewal is the user's) and the budget stop in [references/cost.md](references/cost.md).
+A playbook stops only at its checkpoints, never elsewhere: not for reversible choices, not for routine access failures (record them and move on). The exceptions are the access rules in snu-library (login renewal is the user's: when a tool result carries `user_action_required` or a reader reports `LOGIN_EXPIRED`, tell the user in your next message with the re-login command and recommend renewing now, without stopping the run) and the budget stop in [references/cost.md](references/cost.md).
 
 At a checkpoint, show what was decided and the numbers, then offer:
 1. **추천대로 진행 (Recommended)** — the pilot's recommendation, stated concretely;

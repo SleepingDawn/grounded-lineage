@@ -356,7 +356,8 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "doctor":
         from scholarly_access_agent.runtime.diagnostics import diagnose
-        result = diagnose(probe_url=args.probe)
+        from scholarly_access_agent.runtime.login_alert import attach_login_alert
+        result = attach_login_alert(diagnose(probe_url=args.probe), url=args.probe)
         write_json(result)
         return 0 if result["ok"] else 1
 
@@ -449,7 +450,8 @@ def run(args: argparse.Namespace) -> int:
             timeout_seconds=args.timeout_seconds,
             headless=args.headless,
         )
-        write_json(result.to_dict())
+        from scholarly_access_agent.runtime.login_alert import attach_login_alert
+        write_json(attach_login_alert(result.to_dict(), url=args.url))
         return 0 if result.ok else 1
 
     if args.command == "download-many":
@@ -470,7 +472,8 @@ def run(args: argparse.Namespace) -> int:
                 on_result=write_json_line,
             )
         )
-        write_json_line(batch.summary)
+        from scholarly_access_agent.runtime.login_alert import attach_login_alert
+        write_json_line(attach_login_alert(batch.summary, url=jobs[0].url if jobs else None))
         if batch.summary["login_required"]:
             return 3
         return 0 if batch.summary["failed"] == 0 else 1
@@ -485,7 +488,8 @@ def run(args: argparse.Namespace) -> int:
             timeout_seconds=args.timeout_seconds,
             headless=args.headless,
         )
-        write_json(result.to_dict())
+        from scholarly_access_agent.runtime.login_alert import attach_login_alert
+        write_json(attach_login_alert(result.to_dict(), url=args.url))
         return 0 if result.ok else 1
 
     if args.command == "mcp-server":
