@@ -31,6 +31,15 @@ class PrepareTests(unittest.TestCase):
         share = len(cols[1]) / sum(len(c) for c in cols)
         self.assertGreater(share, 11 / 88)  # "1921–2025" (9 units) + padding fits on one line
 
+    def test_short_uppercase_keys_get_room_for_cell_padding(self):
+        # calc-C1 DFT table: "ENCUT" and "PAW" wrapped to "ENC UT" / "PA W" in a 3-column table
+        long = "설명 문장이 길게 이어지는 칸입니다 " * 5
+        lines = ["| 항목 | 값 | 근거·비고 |", "|---|---|---|",
+                 f"| ENCUT | {long} | {long} |", f"| PAW | {long} | {long} |"]
+        cols = qr.size_tables(lines)[1].strip("|").split("|")
+        share = len(cols[0]) / sum(len(c) for c in cols)
+        self.assertGreater(share, 9 / 88)  # 5 capitals ≈ 6.3 units + ~2.6 units of cell padding
+
     def test_images_html_and_breaks_are_made_safe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -93,8 +93,13 @@ def split_front(text: str) -> tuple[str, str, list[str]]:
 
 
 def _width(cell: str) -> float:
+    """Width in Latin character units: wide (Hangul, CJK) 1.8, Latin capitals 1.25, others 1."""
     cell = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", cell).replace("**", "").replace("`", "")
-    return sum(1.8 if unicodedata.east_asian_width(c) in "WF" else 1.0 for c in cell)
+    return sum(1.8 if unicodedata.east_asian_width(c) in "WF" else 1.25 if "A" <= c <= "Z" else 1.0
+               for c in cell)
+
+
+CELL_PADDING = 3  # units: left and right cell padding (0.6rem each) plus a little slack
 
 
 def _cells(line: str) -> list[str]:
@@ -125,7 +130,7 @@ def size_tables(lines: list[str]) -> list[str]:
             for c in range(len(header)):
                 column = [row[c] for row in body if c < len(row)] or [""]
                 tokens = [_width(t) for cell in column + [header[c]] for t in cell.split()] or [0.0]
-                mins.append(max(tokens) + 2)
+                mins.append(max(tokens) + CELL_PADDING)
                 want.append(max(sum(_width(x) for x in column) / len(column), mins[-1]))
             if sum(want) <= TABLE_UNITS:
                 widths = want

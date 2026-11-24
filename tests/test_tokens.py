@@ -46,6 +46,19 @@ class TokenSourceTests(unittest.TestCase):
         self.assert_follows(css, tokens.report_vars())
         self.assertIn("background: var(--snu-surface)", css)  # the report itself follows dark mode
 
+    def test_inline_code_uses_report_colours_over_quarto_defaults(self):
+        # Quarto styles `p|li|td code:not(.sourceCode)` with a near-white background that beats a
+        # plain `code` rule; in dark mode the light code ink then sits on near-white (unreadable).
+        css = tokens.REPORT_CSS.read_text(encoding="utf-8")
+        rule = next((m for m in re.finditer(r"([^{}]+)\{([^}]*)\}", css)
+                     if "td code:not(.sourceCode)" in m.group(1)), None)
+        self.assertIsNotNone(rule, "no inline-code rule matching Quarto's selectors")
+        selectors = {s.strip() for s in rule.group(1).split(",")}
+        for tag in ("p", "li", "td", "th", "dd"):
+            self.assertIn(f"{tag} code:not(.sourceCode)", selectors)
+        self.assertIn("background: var(--snu-code-bg)", rule.group(2))
+        self.assertIn("color: var(--snu-code-ink)", rule.group(2))
+
     def test_lineage_css_matches_json(self):
         css = lineage_page.base_css({"lanes": [], "nodes": [], "edges": [], "meta": {}})
         self.assert_follows(css, tokens.lineage_vars())
