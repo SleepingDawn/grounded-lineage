@@ -40,6 +40,21 @@ class PublicTextTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             public.read_html(HTML, url, terms=["a"], sections=["b"])
 
+    def test_a_long_heading_from_the_outline_can_be_read_back(self):
+        heading = ("2.2 Sampling of solid-liquid interfaces with explicit solvent, ions and adsorbates "
+                   "from short relaxations and ab initio molecular dynamics")
+        self.assertGreater(len(heading), 100)
+        html = HTML.replace("<h2>3 Results</h2><p>Phonon softening was reduced.</p>",
+                            f"<h2>{heading}</h2><p>Each box holds 1000 K AIMD frames. " + "More text. " * 40 + "</p>")
+        url = "https://arxiv.org/html/2509.17862v2"
+        names = [item["section"] for item in public.read_html(html, url)["outline"]]
+        self.assertIn(heading, names)
+        section = public.read_html(html, url, sections=[heading, "2 Methods"])
+        self.assertEqual([p["section"] for p in section["passages"]], ["2 Methods", heading])
+        self.assertIn("1000 K AIMD", section["passages"][1]["text"])
+        with self.assertRaises(ValueError):
+            public.read_html(html, url, terms=["x" * 101])   # search terms keep their short limit
+
     def test_non_public_hosts_are_not_fetched(self):
         with mock.patch.object(public, "urlopen") as opened:
             result = public.read_url("https://www.sciencedirect.com/science/article/pii/X")

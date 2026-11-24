@@ -159,6 +159,13 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(found, [("warning", "uncited_number"), ("warning", "uncited_number")])
         self.assertEqual([f["line"] for f in result["findings"]], [7, 12])
 
+    def test_version_number_in_a_dataset_name_is_not_a_value(self):
+        text = ("# T\n\n## 한눈에 보기\n\n- 약물형 분자는 SPICE 2가 기본이고, 반응은 ANI 2와 함께 쓴다.\n"
+                "- CHGNet 30 meV/atom 오차.\n- SPICE 2,008,628 배좌.\n")
+        found, result = self.rules(text)
+        self.assertEqual(found, [("warning", "uncited_number"), ("warning", "uncited_number")])
+        self.assertEqual([f["line"] for f in result["findings"]], [6, 7])   # the unit and the count stay
+
     def test_cli_exit_codes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -230,6 +237,23 @@ class VerifyTests(unittest.TestCase):
             self.assertNotIn("verified_by", rng)
             self.assertIn('"title": "Thermal conductivity of glass"', (root / "evidence" / "larkin2014.json")
                           .read_text(encoding="utf-8"))
+
+    def test_verify_matches_thousands_printed_with_spaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "evidence").mkdir()
+            (root / "pdfs").mkdir()
+            make_pdf(root / "pdfs" / "qcml.pdf",
+                     ["Table 1. Total 17 236 007 graphs and 33 496 171 DFT results; 6 307 materials."])
+            record = rec(source_file="pdfs/qcml.pdf")
+            record["results"] = [
+                {"id": "n_dft", "quantity": "DFT results", "value": 33496171, "unit": "structures", "pdf_page": 1},
+                {"id": "n_both", "quantity": "materials", "value": "6,307", "unit": "materials", "pdf_page": 1},
+                {"id": "prefix", "quantity": "not printed", "value": 33496, "unit": "structures", "pdf_page": 1},
+            ]
+            (root / "evidence" / "ganscha2025.json").write_text(json.dumps(record), encoding="utf-8")
+            status = {r["id"]: r["status"] for r in verify_folder(root)["checks"] if r["kind"] == "result"}
+            self.assertEqual(status, {"n_dft": "ok", "n_both": "ok", "prefix": "missing"})
 
     def test_lint_warns_on_missing_source_file(self):
         with tempfile.TemporaryDirectory() as directory:

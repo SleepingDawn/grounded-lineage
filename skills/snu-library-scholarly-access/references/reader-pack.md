@@ -36,14 +36,16 @@ Everything a reading or locating sub-agent needs, in one block. The lead pastes 
  "criteria": [{"criterion": "...", "judgment": "met/not_met/unknown", "reason": "...",
                "evidence": [{"pdf_page": 9, "section": "Table II", "read_mode": "pages", "summary": "short paraphrase"}]}],
  "results": [{"id": "gk300", "quantity": "...", "value": 2.1, "lo": 1.9, "hi": 2.3, "unit": "W/mK",
-              "condition": "300 K, BKS", "pdf_page": 9, "section": "Table II", "read_mode": "pages"}],
+              "condition": "300 K, BKS", "pdf_page": 9, "section": "Table II", "read_mode": "pages"},
+             {"id": "mdtemp", "quantity": "MD sampling temperature", "value": "50-800", "lo": 50, "hi": 800, "unit": "K",
+              "condition": "range only, no single value printed", "pdf_page": 4, "section": "2.1", "read_mode": "pages"}],
  "limitations": ["..."]}
 ```
 
 - `access`: `fulltext_pdf` / `fulltext_html` (passages behind each judgment read whole), `excerpts` (term-located passages only), `secondary` (known only from a paper that cites it), `abstract_only`, `unavailable`.
 - `read_mode` per locator: `pages`, `sections`, `figure`, `terms`, `caption`, `citing`. One-based PDF page numbers (file pages, not printed page numbers).
 - `venue_type`: journal, conference_paper, conference_abstract, thesis, preprint, working_paper, report, book. `evidence_role`: empirical, model, review, context.
-- Every number a report might cite goes in `results`, as printed, with its page. A number you computed is not a result.
+- Every number a report might cite goes in `results`, as printed, with its page. A number you computed is not a result. A printed range with no single value goes in `value` as a string ("50-800") with `lo`/`hi`; never leave `value` null. A fact without a number belongs in `criteria`, not `results`.
 - Introduction or reference-list mentions never establish that a study used a method. Paraphrase briefly; no long quotes.
 
 ## Output contract

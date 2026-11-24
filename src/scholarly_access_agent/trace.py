@@ -38,6 +38,9 @@ ABBREVIATIONS = ("al.", "e.g.", "i.e.", "fig.", "figs.", "eq.", "eqs.", "ref.", 
 NOT_A_VALUE = re.compile(
     r"(?:\b(?:Fig(?:ure)?s?|Tables?|Eqs?|Equations?|Sec(?:tion)?s?|Refs?|Chapter|Ch|No|Vol|pp?)\.?|"
     r"그림|표|식|§)\s*\d+(?:\.\d+)*[A-Za-z]?(?:\s*[-–]\s*\d+)?", re.I)
+# A version number written after a name with two or more capitals ("SPICE 2", "ANI 2"), not followed
+# by a unit, a decimal part, thousands or more digits: part of the name, not a value.
+NAME_VERSION = re.compile(r"\b([A-Z][A-Za-z\-]*[A-Z][A-Za-z\-]*)\s+\d{1,2}(?!\d|[.,]\d|\s*[A-Za-zµμÅ°%‰])")
 URL = re.compile(r"(?:https?://|doi:|www\.)\S+", re.I)
 LINK_TARGET = re.compile(r"(!?\[[^\]]*\])\([^)]*\)")
 HTML_TAG = re.compile(r"<[^>]+>")
@@ -401,6 +404,7 @@ def _prose(text: str) -> str:
     text = LINK_TARGET.sub(r"\1", text)
     text = URL.sub(" ", text)
     text = HTML_TAG.sub(" ", text)
+    text = NAME_VERSION.sub(r"\1", text)
     return NOT_A_VALUE.sub(" ", text)
 
 

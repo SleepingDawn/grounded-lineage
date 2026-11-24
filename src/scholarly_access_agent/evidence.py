@@ -423,6 +423,19 @@ def _targets(item: dict, fields: tuple[str, ...]) -> list[tuple[str, float]]:
     return out
 
 
+# Thousands grouped with a space, thin space or no-break space, as many journals print them ("33 496 171").
+SPACED_THOUSANDS = re.compile(r"(?<![\d.,])\d{1,3}(?:[     ]\d{3})+(?![\d.,]\d)")
+
+
+def _page_numbers(text: str) -> list[float]:
+    """Numbers printed on a page, plus each space-grouped run read as one number."""
+    from scholarly_access_agent.trace import number_tokens
+
+    found = [v for _, v in number_tokens(text, strict=False)]
+    found += [float(re.sub(r"\D", "", m.group(0))) for m in SPACED_THOUSANDS.finditer(text)]
+    return found
+
+
 def verify_folder(path: str | Path, record: str | None = None, write: bool = False,
                   today: str | None = None) -> dict[str, Any]:
     """Re-read each result's (and page locator's) PDF page from `source_file`; check its numbers are printed there.
@@ -432,7 +445,7 @@ def verify_folder(path: str | Path, record: str | None = None, write: bool = Fal
     """
     from datetime import date
 
-    from scholarly_access_agent.trace import _pages, number_tokens, values_match
+    from scholarly_access_agent.trace import _pages, values_match
 
     topic, evidence, _ = resolve_folders(path)
     rows: list[dict[str, Any]] = []
@@ -474,7 +487,7 @@ def verify_folder(path: str | Path, record: str | None = None, write: bool = Fal
             except ValueError as exc:
                 rows.append({**row, "status": "error", "reason": str(exc)})
                 continue
-            found = [v for _, v in number_tokens(text, strict=False)]
+            found = _page_numbers(text)
             missing = [w for w, v in targets if not any(values_match(w, v, f) for f in found)]
             row.update(values=[w for w, _ in targets], missing=missing)
             if not targets:

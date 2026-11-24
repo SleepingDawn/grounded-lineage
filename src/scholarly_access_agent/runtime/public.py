@@ -187,7 +187,7 @@ def read_html(
     if not 1000 <= max_chars <= 24000:
         raise ValueError("max_chars must be between 1000 and 24000.")
     _check_phrases(terms, "terms")
-    _check_phrases(sections, "sections")
+    _check_phrases(sections, "sections", max_len=400)  # headings copied from the outline can be long
     parsed = parse_html(html, source_url)
     found: list[_Section] = parsed["sections"]  # type: ignore[assignment]
     base: dict[str, object] = {
@@ -372,12 +372,12 @@ def _charset(content_type: str) -> str:
     return match.group(1) if match else "utf-8"
 
 
-def _check_phrases(values: list[str] | None, label: str) -> None:
+def _check_phrases(values: list[str] | None, label: str, max_len: int = 100) -> None:
     if values is not None and (
         not isinstance(values, list) or len(values) > 12
-        or any(not isinstance(v, str) or not v.strip() or len(v) > 100 for v in values)
+        or any(not isinstance(v, str) or not v.strip() or len(v) > max_len for v in values)
     ):
-        raise ValueError(f"{label} must contain at most 12 non-empty phrases, each up to 100 characters.")
+        raise ValueError(f"{label} must contain at most 12 non-empty phrases, each up to {max_len} characters.")
 
 
 def _normalize(text: str) -> str:

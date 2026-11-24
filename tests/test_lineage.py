@@ -147,6 +147,30 @@ class LinksLookupTests(unittest.TestCase):
         self.assertIn("W1", err)
 
 
+class FetchManyTests(unittest.TestCase):
+    def test_ids_missing_from_the_filter_index_are_fetched_one_by_one(self):
+        w2 = openalex_work("W2", "10.1/two", "Second")
+        entity_calls = []
+
+        def fake(params, timeout=60, endpoint="works"):
+            if endpoint == "works":                       # the index knows only W1
+                self.assertEqual(params["filter"], "openalex_id:W1|W2|W3")
+                return 200, {}, {"results": [openalex_work("W1", "10.1/one", "First")], "meta": {"count": 1}}
+            entity_calls.append(endpoint)
+            if endpoint == "works/W2":
+                self.assertEqual(params.get("select"), "id,title")
+                return 200, {}, w2
+            if endpoint == "works/W3":
+                return 404, {}, {}
+            raise AssertionError(f"unexpected endpoint {endpoint}")
+
+        with mock.patch.object(openalex, "_request", side_effect=fake):
+            out = openalex.fetch_many(["W3", "W1", "https://openalex.org/W2"], fields="id,title")
+        self.assertEqual(sorted(out), ["W1", "W2"])        # W3 does not exist and is left out
+        self.assertEqual(out["W2"]["title"], "Second")
+        self.assertEqual(sorted(entity_calls), ["works/W2", "works/W3"])
+
+
 def fake_sorted_get(cited, newest, count=999):
     """OpenAlex stand-in: answers by the requested sort order; records every request."""
     calls = []

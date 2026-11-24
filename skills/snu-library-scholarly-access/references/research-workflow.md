@@ -14,7 +14,9 @@ Log each query, source, date, and candidate DOI/arXiv ID/URL. Normalize DOI case
 - **Metadata check before delivery.** Run `scholarly-access-agent refs check <topic folder>/evidence` (Crossref by DOI): it compares title, year, first author, venue and item type with each record and suggests `venue_type`. Fix every mismatch; records without a DOI (many Korean items) are listed for a manual KCI/RISS check. It also asks OpenAlex about each DOI: a `retracted` record is not evidence (remove it, or say it was retracted where it must be mentioned), and a journal flagged with h-index < 10 and 2-year citedness < 0.5 needs a manual check of its indexing (Scopus/WoS) and editorial board before anything rests on it; young journals look like this too, so it is a prompt, not a verdict. Papers found only by web search get the same check; they are where predatory or hijacked journals most often come in.
 
 ## Tiers and budgets
-State the budget at the start (which preset, with its numbers) and report what was actually spent.
+State the budget at the start (which preset, with its numbers) and report what was actually spent. When more than about 15 papers will be read, run `scholarly-access-agent cost estimate --playbook status` (with `--read`/`--pdf` set to the planned counts) first and give the user the estimate with the budget; after the run, `cost record --run <Topic>-YYYYMMDD-HHMM --stage read --tokens <summed sub-agent tokens>` so later estimates are calibrated.
+
+**Revising an earlier report.** Do not read everything again. Move the previous README, report file and evidence into `archive/`. Records already in the current format stay as they are. Older records are converted (one record per paper) where their locators allow it, and re-read only where they do not. Then read only: (1) papers new since the last version, (2) preprints whose journal version has since appeared (`resolve` each one), (3) records whose criteria were `unknown` or whose access was `unavailable`, and (4) claims the previous version is suspected of getting wrong. The change log says what was reused, converted and re-read.
 
 | Tier | Purpose | Tool | Default (trend review) | Deep | Context cost |
 | --- | --- | --- | --- | --- | --- |
@@ -48,7 +50,7 @@ Deep reads more of what is accessible; it never widens access. Bot checks, `logi
 Keep `max_chars` small (4–8k) for term searches and raise it only for the sections you must read whole. Prefer one `sections` call over repeated term calls once you know where the evidence is.
 
 ## Delegating reading to sub-agents
-When the Tier 2–3 list exceeds about 15 papers, split it into batches of 4–6 papers per sub-agent. Before dispatching, run the session preflight (`doctor` with `probe_url`, publisher-routes.md) so subscription papers do not end at the abstract, and `scholarly-access-agent resolve <DOI>` for each paper so the brief carries its route instead of a locator agent finding it.
+When the Tier 2–3 list exceeds about 15 papers, split it into batches of 4–6 papers per sub-agent. Dispatch only after citation expansion (Tier 1b) and the measured search (Tier 1c) are finished: a paper they surface after the batches are out costs one more serial batch. Before dispatching, run the session preflight (`doctor` with `probe_url`, publisher-routes.md) so subscription papers do not end at the abstract, and `scholarly-access-agent resolve <DOI>` for each paper so the brief carries its route instead of a locator agent finding it.
 
 **Brief layout (prompt caching).** Caching matches identical prompt prefixes only, so every brief has the same opening bytes:
 1. the output of `scholarly-access-agent pack reader`, unchanged (same text, same order, nothing inserted);

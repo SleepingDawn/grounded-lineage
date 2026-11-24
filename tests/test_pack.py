@@ -56,6 +56,20 @@ class PackTests(unittest.TestCase):
                             for p in paths))
         self.assertEqual([p.parts[-5] for p in paths[1:]], [".claude", ".codex"])
 
+    def test_the_record_readers_copy_passes_lint_including_a_printed_range(self):
+        """Readers copy the pack's example record; a range-only result with a null value failed lint."""
+        import json
+        import re
+
+        from scholarly_access_agent.evidence import lint_record
+        repo_pack = pack.candidates("reader")[0]
+        block = re.search(r"```json\n(.*?)\n```", repo_pack.read_text(encoding="utf-8"), re.S).group(1)
+        record = json.loads(block)
+        self.assertEqual([f for f in lint_record(record, "example.json") if f["level"] == "error"], [])
+        ranges = [r for r in record["results"] if isinstance(r.get("value"), str) and "-" in r["value"]]
+        self.assertTrue(ranges, "the example shows how to record a printed range")
+        self.assertTrue(all(r.get("lo") is not None and r.get("hi") is not None for r in ranges))
+
     def test_cli_dispatch(self):
         from scholarly_access_agent import cli
         original = pack.candidates
